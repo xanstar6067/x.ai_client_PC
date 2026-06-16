@@ -311,7 +311,15 @@ public sealed class LocalizationService : ObservableObject
 
     public CultureInfo Culture => CultureInfo.GetCultureInfo(LanguageCode == RussianCode ? "ru-RU" : "en-US");
 
-    public string this[string key] => Get(key);
+    public string this[string key]
+    {
+        get => Get(key);
+        set
+        {
+            // Some WPF targets bind Content/Header as TwoWay by default. Localization is read-only;
+            // accepting the setter keeps those bindings from failing at startup.
+        }
+    }
 
     public string Get(string key)
     {
