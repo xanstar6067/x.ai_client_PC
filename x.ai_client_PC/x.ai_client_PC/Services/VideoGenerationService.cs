@@ -8,11 +8,13 @@ public class VideoGenerationService
 {
     private readonly XaiApiClient _api;
     private readonly DataRepository _repo;
+    private readonly LocalizationService _loc;
 
-    public VideoGenerationService(XaiApiClient api, DataRepository repo)
+    public VideoGenerationService(XaiApiClient api, DataRepository repo, LocalizationService loc)
     {
         _api = api;
         _repo = repo;
+        _loc = loc;
     }
 
     public async Task<ChatMessage> GenerateAsync(ChatSession chat, string prompt, CancellationToken ct)
@@ -28,7 +30,7 @@ public class VideoGenerationService
         {
             ChatId = chat.Id,
             Role = MessageRole.Assistant,
-            Content = "Starting video generation...",
+            Content = _loc["VideoStarting"],
             IsStreaming = true,
             VideoStatus = VideoGenerationStatus.Pending,
             ParentMessageId = userMessage.Id
@@ -62,7 +64,7 @@ public class VideoGenerationService
 
             assistant.VideoRequestId = start.RequestId;
             assistant.VideoStatus = MapStatus(start.Status ?? "pending");
-            assistant.Content = $"Request ID: {start.RequestId}\nStatus: {assistant.VideoStatus}";
+            assistant.Content = _loc.Format("VideoRequestStatus", start.RequestId, _loc.GetVideoStatus(assistant.VideoStatus));
             await _repo.SaveChatAsync(chat);
 
             while (!ct.IsCancellationRequested)
@@ -70,7 +72,7 @@ public class VideoGenerationService
                 await Task.Delay(TimeSpan.FromSeconds(5), ct);
                 var status = await _api.GetVideoStatusAsync(start.RequestId, ct);
                 assistant.VideoStatus = MapStatus(status.Status);
-                assistant.Content = $"Request ID: {start.RequestId}\nStatus: {status.Status}";
+                assistant.Content = _loc.Format("VideoRequestStatus", start.RequestId, _loc.GetVideoStatus(assistant.VideoStatus));
 
                 if (status.Status is "done")
                 {
@@ -84,7 +86,7 @@ public class VideoGenerationService
                         assistant.MediaUrl = url;
                     }
 
-                    assistant.Content = "Video generated successfully.";
+                    assistant.Content = _loc["VideoGenerated"];
                     var model = (await _repo.GetModelsAsync()).FirstOrDefault(m => m.Id == chat.ModelId);
                     var duration = chat.VideoDurationSeconds ?? 5;
                     assistant.CostUsd = (model?.VideoPricePerSecond ?? 0.05) * duration;
@@ -95,7 +97,7 @@ public class VideoGenerationService
                 if (status.Status is "failed" or "expired")
                 {
                     assistant.ErrorMessage = status.Error?.ToString() ?? status.Status;
-                    assistant.Content = $"Video generation {status.Status}.";
+                    assistant.Content = _loc.Format("VideoGenerationEnded", _loc.GetVideoStatus(assistant.VideoStatus));
                     break;
                 }
 
@@ -105,7 +107,7 @@ public class VideoGenerationService
         catch (Exception ex)
         {
             assistant.ErrorMessage = ex.Message;
-            assistant.Content = $"Error: {ex.Message}";
+            assistant.Content = _loc.Format("ErrorPrefix", ex.Message);
             assistant.VideoStatus = VideoGenerationStatus.Failed;
         }
         finally

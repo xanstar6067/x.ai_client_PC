@@ -23,6 +23,7 @@ public partial class App : Application
         services.AddSingleton<XaiApiClient>();
         services.AddSingleton<DataRepository>();
         services.AddSingleton<ModelCatalogService>();
+        services.AddSingleton<LocalizationService>();
         services.AddSingleton<ChatGenerationService>();
         services.AddSingleton<ImageGenerationService>();
         services.AddSingleton<VideoGenerationService>();

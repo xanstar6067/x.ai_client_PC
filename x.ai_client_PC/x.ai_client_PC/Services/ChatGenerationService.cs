@@ -8,11 +8,13 @@ public class ChatGenerationService
 {
     private readonly XaiApiClient _api;
     private readonly DataRepository _repo;
+    private readonly LocalizationService _loc;
 
-    public ChatGenerationService(XaiApiClient api, DataRepository repo)
+    public ChatGenerationService(XaiApiClient api, DataRepository repo, LocalizationService loc)
     {
         _api = api;
         _repo = repo;
+        _loc = loc;
     }
 
     public async Task<ChatMessage> SendMessageAsync(
@@ -66,7 +68,7 @@ public class ChatGenerationService
         catch (OperationCanceledException)
         {
             assistant.IsStreaming = false;
-            assistant.Content = string.IsNullOrEmpty(assistant.Content) ? "[Stopped]" : assistant.Content;
+            assistant.Content = string.IsNullOrEmpty(assistant.Content) ? _loc["AssistantStopped"] : assistant.Content;
             await _repo.SaveChatAsync(chat);
             throw;
         }
@@ -74,7 +76,7 @@ public class ChatGenerationService
         {
             assistant.IsStreaming = false;
             assistant.ErrorMessage = ex.Message;
-            assistant.Content = $"Error: {ex.Message}";
+            assistant.Content = _loc.Format("ErrorPrefix", ex.Message);
             await _repo.SaveChatAsync(chat);
             throw;
         }

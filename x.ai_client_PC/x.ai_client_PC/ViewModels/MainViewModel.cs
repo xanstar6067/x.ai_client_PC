@@ -22,6 +22,7 @@ public partial class MainViewModel : ObservableObject
     private readonly BackupService _backupService;
 
     private CancellationTokenSource? _generationCts;
+    private bool _isInitializing;
 
     [ObservableProperty] private AppSection _currentSection = AppSection.Text;
     [ObservableProperty] private ChatKind _currentChatKind = ChatKind.Text;
@@ -35,6 +36,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private AppSettingsEntity? _settings;
     [ObservableProperty] private string _apiKeyInput = string.Empty;
     [ObservableProperty] private bool _hasApiKey;
+    [ObservableProperty] private string _selectedLanguageCode = LocalizationService.RussianCode;
     [ObservableProperty] private double _lastRequestCost;
     [ObservableProperty] private int _lastPromptTokens;
     [ObservableProperty] private int _lastCompletionTokens;
@@ -47,6 +49,21 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<ModelInfo> Models { get; } = [];
     public ObservableCollection<SystemRole> Roles { get; } = [];
     public ObservableCollection<string> PendingAttachments { get; } = [];
+    public LocalizationService Loc { get; }
+
+    public ObservableCollection<LanguageOption> AvailableLanguages => Loc.AvailableLanguages;
+
+    public string ApiKeyStatusText => HasApiKey ? Loc["ApiKeyStored"] : Loc["ApiKeyMissing"];
+
+    public string ChatTitleText => SelectedChat?.Title ?? Loc["SelectOrCreateChat"];
+
+    public string LoadedModelsText => Loc.Format("LoadedModels", Models.Count);
+
+    public string PromptTokensText => Loc.Format("PromptTokens", LastPromptTokens);
+
+    public string CompletionTokensText => Loc.Format("CompletionTokens", LastCompletionTokens);
+
+    public string ReasoningTokensText => Loc.Format("ReasoningTokens", LastReasoningTokens);
 
     public IEnumerable<ChatSession> FilteredChats => string.IsNullOrWhiteSpace(SearchQuery)
         ? Chats
@@ -59,7 +76,8 @@ public partial class MainViewModel : ObservableObject
         ChatGenerationService chatService,
         ImageGenerationService imageService,
         VideoGenerationService videoService,
-        BackupService backupService)
+        BackupService backupService,
+        LocalizationService loc)
     {
         _repo = repo;
         _api = api;
@@ -68,22 +86,42 @@ public partial class MainViewModel : ObservableObject
         _imageService = imageService;
         _videoService = videoService;
         _backupService = backupService;
+        Loc = loc;
+        StatusMessage = Loc["StatusReady"];
+        Loc.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == "Item[]")
+            {
+                RefreshLocalizedProperties();
+            }
+        };
     }
 
     public async Task InitializeAsync()
     {
-        AppPaths.EnsureDirectories();
-        await _repo.InitializeAsync();
+        _isInitializing = true;
+        try
+        {
+            AppPaths.EnsureDirectories();
+            await _repo.InitializeAsync();
 
-        Settings = await _repo.GetSettingsAsync();
-        HasApiKey = WindowsCredentialStore.LoadApiKey() is not null;
+            Settings = await _repo.GetSettingsAsync();
+            SelectedLanguageCode = LocalizationService.NormalizeLanguageCode(Settings.LanguageCode);
+            Loc.LanguageCode = SelectedLanguageCode;
+            HasApiKey = WindowsCredentialStore.LoadApiKey() is not null;
 
-        var apiKey = WindowsCredentialStore.LoadApiKey();
-        _api.Configure(new XaiApiOptions { BaseUrl = Settings.BaseUrl, ApiKey = apiKey });
+            var apiKey = WindowsCredentialStore.LoadApiKey();
+            _api.Configure(new XaiApiOptions { BaseUrl = Settings.BaseUrl, ApiKey = apiKey });
 
-        await LoadRolesAsync();
-        await LoadModelsAsync();
-        await LoadChatsAsync();
+            await LoadRolesAsync();
+            await LoadModelsAsync();
+            await LoadChatsAsync();
+            StatusMessage = Loc["StatusReady"];
+        }
+        finally
+        {
+            _isInitializing = false;
+        }
     }
 
     [RelayCommand]
@@ -108,6 +146,13 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task NewChatAsync()
     {
+        var targetCategory = CurrentChatKind switch
+        {
+            ChatKind.Image => ModelCategory.Image,
+            ChatKind.Video => ModelCategory.Video,
+            _ => ModelCategory.Text
+        };
+
         var defaultModel = Models.FirstOrDefault(m =>
             m.IsDefault && m.Category == (CurrentChatKind switch
             {
@@ -115,12 +160,18 @@ public partial class MainViewModel : ObservableObject
                 ChatKind.Video => ModelCategory.Video,
                 _ => ModelCategory.Text
             }))
+            ?? Models.FirstOrDefault(m => m.Category == targetCategory)
             ?? Models.FirstOrDefault(m => m.Category == ModelCategory.Text);
 
         var chat = new ChatSession
         {
             Kind = CurrentChatKind,
-            Title = $"New {CurrentChatKind} chat",
+            Title = CurrentChatKind switch
+            {
+                ChatKind.Image => Loc["NewImageChat"],
+                ChatKind.Video => Loc["NewVideoChat"],
+                _ => Loc["NewTextChat"]
+            },
             ModelId = defaultModel?.Id ?? string.Empty,
             SystemRoleId = Roles.FirstOrDefault(r => r.IsDefault)?.Id,
             AspectRatio = "16:9",
@@ -190,11 +241,12 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task SendAsync()
     {
-        if (SelectedChat is null || string.IsNullOrWhiteSpace(InputText) || IsGenerating)
+        if (!await TryPrepareSendAsync())
         {
             return;
         }
 
+        var chat = SelectedChat!;
         var text = InputText;
         var attachments = PendingAttachments.ToList();
         InputText = string.Empty;
@@ -202,22 +254,22 @@ public partial class MainViewModel : ObservableObject
 
         _generationCts = new CancellationTokenSource();
         IsGenerating = true;
-        StatusMessage = "Generating...";
+        StatusMessage = Loc["StatusGenerating"];
 
         try
         {
             ChatMessage result;
-            if (SelectedChat.Kind == ChatKind.Text)
+            if (chat.Kind == ChatKind.Text)
             {
-                result = await _chatService.SendMessageAsync(SelectedChat, text, attachments, _generationCts.Token);
+                result = await _chatService.SendMessageAsync(chat, text, attachments, _generationCts.Token);
             }
-            else if (SelectedChat.Kind == ChatKind.Image)
+            else if (chat.Kind == ChatKind.Image)
             {
-                result = await _imageService.GenerateAsync(SelectedChat, text, _generationCts.Token);
+                result = await _imageService.GenerateAsync(chat, text, _generationCts.Token);
             }
             else
             {
-                result = await _videoService.GenerateAsync(SelectedChat, text, _generationCts.Token);
+                result = await _videoService.GenerateAsync(chat, text, _generationCts.Token);
             }
 
             await RefreshSelectedChatAsync();
@@ -225,17 +277,17 @@ public partial class MainViewModel : ObservableObject
             LastPromptTokens = result.PromptTokens;
             LastCompletionTokens = result.CompletionTokens;
             LastReasoningTokens = result.ReasoningTokens;
-            StatusMessage = "Done";
+            StatusMessage = Loc["StatusDone"];
         }
         catch (OperationCanceledException)
         {
-            StatusMessage = "Stopped";
+            StatusMessage = Loc["StatusStopped"];
             await RefreshSelectedChatAsync();
         }
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
-            MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(ex.Message, Loc["ErrorTitle"], MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -249,7 +301,7 @@ public partial class MainViewModel : ObservableObject
     private void Stop()
     {
         _generationCts?.Cancel();
-        StatusMessage = "Stopping...";
+        StatusMessage = Loc["StatusStopping"];
     }
 
     [RelayCommand]
@@ -288,20 +340,32 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task SaveApiKeyAsync()
+    private async Task SaveApiKeyAsync(string? apiKey)
     {
-        if (string.IsNullOrWhiteSpace(ApiKeyInput))
+        apiKey = string.IsNullOrWhiteSpace(apiKey) ? ApiKeyInput : apiKey;
+
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
             WindowsCredentialStore.DeleteApiKey();
             HasApiKey = false;
             _api.Configure(new XaiApiOptions { BaseUrl = Settings?.BaseUrl ?? "https://api.x.ai/v1" });
+            StatusMessage = Loc["StatusApiKeyDeleted"];
             return;
         }
 
-        WindowsCredentialStore.SaveApiKey(ApiKeyInput);
-        HasApiKey = true;
-        _api.Configure(new XaiApiOptions { BaseUrl = Settings?.BaseUrl ?? "https://api.x.ai/v1", ApiKey = ApiKeyInput });
-        ApiKeyInput = string.Empty;
+        try
+        {
+            WindowsCredentialStore.SaveApiKey(apiKey);
+            HasApiKey = true;
+            _api.Configure(new XaiApiOptions { BaseUrl = Settings?.BaseUrl ?? "https://api.x.ai/v1", ApiKey = apiKey });
+            ApiKeyInput = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = Loc.Format("StatusSaveApiKeyFailed", ex.Message);
+            MessageBox.Show(StatusMessage, Loc["ErrorTitle"], MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
 
         var valid = await _api.ValidateApiKeyAsync();
         if (valid)
@@ -309,16 +373,16 @@ public partial class MainViewModel : ObservableObject
             try
             {
                 await LoadModelsAsync(refresh: true);
-                StatusMessage = $"API key verified. Loaded {Models.Count} models.";
+                StatusMessage = Loc.Format("StatusApiKeyVerifiedModels", Models.Count);
             }
             catch
             {
-                StatusMessage = "API key verified. Use 'Load models from API' to fetch models.";
+                StatusMessage = Loc["StatusApiKeyVerified"];
             }
         }
         else
         {
-            StatusMessage = "API key saved but validation failed.";
+            StatusMessage = Loc["StatusApiKeySavedButInvalid"];
         }
     }
 
@@ -326,7 +390,7 @@ public partial class MainViewModel : ObservableObject
     private async Task ValidateApiKeyAsync()
     {
         var valid = await _api.ValidateApiKeyAsync();
-        StatusMessage = valid ? "API key is valid." : "API key validation failed.";
+        StatusMessage = valid ? Loc["StatusApiKeyValid"] : Loc["StatusApiKeyInvalid"];
     }
 
     [RelayCommand]
@@ -334,8 +398,8 @@ public partial class MainViewModel : ObservableObject
     {
         if (!HasApiKey)
         {
-            StatusMessage = "Save API key first, then load models.";
-            MessageBox.Show("Save your xAI API key in Settings before loading models.", "API key required",
+            StatusMessage = Loc["StatusLoadModelsFirst"];
+            MessageBox.Show(Loc["ApiKeyRequiredMessage"], Loc["ApiKeyRequiredTitle"],
                 MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -343,12 +407,12 @@ public partial class MainViewModel : ObservableObject
         try
         {
             await LoadModelsAsync(refresh: true);
-            StatusMessage = $"Loaded {Models.Count} models from API.";
+            StatusMessage = Loc.Format("StatusLoadedModels", Models.Count);
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Failed to load models: {ex.Message}";
-            MessageBox.Show(ex.Message, "Failed to load models", MessageBoxButton.OK, MessageBoxImage.Error);
+            StatusMessage = Loc.Format("StatusFailedLoadModels", ex.Message);
+            MessageBox.Show(ex.Message, Loc["FailedLoadModelsTitle"], MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -360,13 +424,14 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        Settings.LanguageCode = SelectedLanguageCode;
         await _repo.SaveSettingsAsync(Settings);
         _api.Configure(new XaiApiOptions
         {
             BaseUrl = Settings.BaseUrl,
             ApiKey = WindowsCredentialStore.LoadApiKey()
         });
-        StatusMessage = "Settings saved.";
+        StatusMessage = Loc["StatusSettingsSaved"];
     }
 
     [RelayCommand]
@@ -381,7 +446,7 @@ public partial class MainViewModel : ObservableObject
         if (dialog.ShowDialog() == true)
         {
             await _backupService.ExportAsync(dialog.FileName);
-            StatusMessage = "Backup exported (API key excluded).";
+            StatusMessage = Loc["StatusBackupExported"];
         }
     }
 
@@ -393,7 +458,7 @@ public partial class MainViewModel : ObservableObject
         {
             await _backupService.ImportAsync(dialog.FileName);
             await InitializeAsync();
-            StatusMessage = "Backup imported.";
+            StatusMessage = Loc["StatusBackupImported"];
         }
     }
 
@@ -470,7 +535,7 @@ public partial class MainViewModel : ObservableObject
 
         await _repo.SaveChatAsync(SelectedChat);
         UpdateModelConstraints();
-        StatusMessage = "Chat settings saved.";
+        StatusMessage = Loc["StatusChatSettingsSaved"];
     }
 
     [RelayCommand]
@@ -488,7 +553,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task AddRoleAsync()
     {
-        var role = new SystemRole { Name = "New role", Content = string.Empty };
+        var role = new SystemRole { Name = Loc["NewRoleName"], Content = string.Empty };
         await _repo.SaveRoleAsync(role);
         await LoadRolesAsync();
     }
@@ -497,8 +562,32 @@ public partial class MainViewModel : ObservableObject
 
     partial void OnSearchQueryChanged(string value) => OnPropertyChanged(nameof(FilteredChats));
 
+    partial void OnHasApiKeyChanged(bool value) => OnPropertyChanged(nameof(ApiKeyStatusText));
+
+    partial void OnLastPromptTokensChanged(int value) => OnPropertyChanged(nameof(PromptTokensText));
+
+    partial void OnLastCompletionTokensChanged(int value) => OnPropertyChanged(nameof(CompletionTokensText));
+
+    partial void OnLastReasoningTokensChanged(int value) => OnPropertyChanged(nameof(ReasoningTokensText));
+
+    partial void OnSelectedLanguageCodeChanged(string value)
+    {
+        var languageCode = LocalizationService.NormalizeLanguageCode(value);
+        Loc.LanguageCode = languageCode;
+
+        if (Settings is not null)
+        {
+            Settings.LanguageCode = languageCode;
+            if (!_isInitializing)
+            {
+                _ = _repo.SaveSettingsAsync(Settings);
+            }
+        }
+    }
+
     partial void OnSelectedChatChanged(ChatSession? value)
     {
+        OnPropertyChanged(nameof(ChatTitleText));
         if (value is not null && (value.Messages is null || value.Messages.Count == 0))
         {
             _ = SelectChatAsync(value);
@@ -513,7 +602,7 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        var dialog = new EditMessageDialog(message.Content) { Owner = Application.Current.MainWindow };
+        var dialog = new EditMessageDialog(message.Content, Loc) { Owner = Application.Current.MainWindow };
         if (dialog.ShowDialog() != true)
         {
             return;
@@ -560,8 +649,54 @@ public partial class MainViewModel : ObservableObject
     {
         IsMultiAgentModel = SelectedModel?.IsMultiAgent == true || XaiApiClient.IsMultiAgentModel(SelectedChat?.ModelId ?? string.Empty);
         MultiAgentNotice = IsMultiAgentModel
-            ? "Multi-Agent model: maxTokens, frequencyPenalty and presencePenalty are disabled. reasoningEffort is available."
+            ? Loc["MultiAgentNotice"]
             : string.Empty;
+    }
+
+    private async Task<bool> TryPrepareSendAsync()
+    {
+        if (IsGenerating)
+        {
+            StatusMessage = Loc["SendBusy"];
+            return false;
+        }
+
+        if (SelectedChat is null)
+        {
+            StatusMessage = Loc["SendNoChat"];
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(InputText))
+        {
+            StatusMessage = Loc["SendEmpty"];
+            return false;
+        }
+
+        if (!HasApiKey)
+        {
+            StatusMessage = Loc["SendNoApiKey"];
+            return false;
+        }
+
+        if (SelectedModel is not null)
+        {
+            SelectedChat.ModelId = SelectedModel.Id;
+        }
+
+        if (SelectedRole is not null)
+        {
+            SelectedChat.SystemRoleId = SelectedRole.Id;
+        }
+
+        if (string.IsNullOrWhiteSpace(SelectedChat.ModelId))
+        {
+            StatusMessage = Loc["SendNoModel"];
+            return false;
+        }
+
+        await _repo.SaveChatAsync(SelectedChat);
+        return true;
     }
 
     private async Task RefreshSelectedChatAsync()
@@ -598,6 +733,8 @@ public partial class MainViewModel : ObservableObject
         {
             Models.Add(model);
         }
+
+        OnPropertyChanged(nameof(LoadedModelsText));
     }
 
     private async Task LoadRolesAsync()
@@ -607,5 +744,17 @@ public partial class MainViewModel : ObservableObject
         {
             Roles.Add(role);
         }
+    }
+
+    private void RefreshLocalizedProperties()
+    {
+        OnPropertyChanged(nameof(ApiKeyStatusText));
+        OnPropertyChanged(nameof(ChatTitleText));
+        OnPropertyChanged(nameof(LoadedModelsText));
+        OnPropertyChanged(nameof(PromptTokensText));
+        OnPropertyChanged(nameof(CompletionTokensText));
+        OnPropertyChanged(nameof(ReasoningTokensText));
+        StatusMessage = Loc["StatusReady"];
+        UpdateModelConstraints();
     }
 }

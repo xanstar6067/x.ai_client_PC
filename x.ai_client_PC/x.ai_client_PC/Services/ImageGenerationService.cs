@@ -8,11 +8,13 @@ public class ImageGenerationService
 {
     private readonly XaiApiClient _api;
     private readonly DataRepository _repo;
+    private readonly LocalizationService _loc;
 
-    public ImageGenerationService(XaiApiClient api, DataRepository repo)
+    public ImageGenerationService(XaiApiClient api, DataRepository repo, LocalizationService loc)
     {
         _api = api;
         _repo = repo;
+        _loc = loc;
     }
 
     public async Task<ChatMessage> GenerateAsync(ChatSession chat, string prompt, CancellationToken ct)
@@ -28,7 +30,7 @@ public class ImageGenerationService
         {
             ChatId = chat.Id,
             Role = MessageRole.Assistant,
-            Content = "Generating image...",
+            Content = _loc["ImageGenerating"],
             IsStreaming = true,
             ParentMessageId = userMessage.Id
         };
@@ -69,13 +71,13 @@ public class ImageGenerationService
             var imageData = response.Data.FirstOrDefault();
             if (imageData is null)
             {
-                throw new InvalidOperationException("No image returned from API.");
+                throw new InvalidOperationException(_loc["NoImageReturned"]);
             }
 
             var localPath = await SaveImageResultAsync(imageData, ct);
             assistant.MediaLocalPath = localPath;
             assistant.MediaUrl = imageData.Url;
-            assistant.Content = "Image generated.";
+            assistant.Content = _loc["ImageGenerated"];
             assistant.IsStreaming = false;
 
             var model = (await _repo.GetModelsAsync()).FirstOrDefault(m => m.Id == chat.ModelId);
@@ -86,7 +88,7 @@ public class ImageGenerationService
         {
             assistant.IsStreaming = false;
             assistant.ErrorMessage = ex.Message;
-            assistant.Content = $"Error: {ex.Message}";
+            assistant.Content = _loc.Format("ErrorPrefix", ex.Message);
         }
 
         await _repo.SaveChatAsync(chat);
@@ -110,7 +112,7 @@ public class ImageGenerationService
         }
         else
         {
-            throw new InvalidOperationException("Image response has no data.");
+            throw new InvalidOperationException(_loc["ImageResponseNoData"]);
         }
 
         var path = Path.Combine(AppPaths.MediaPath, $"{Guid.NewGuid():N}{ext}");

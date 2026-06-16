@@ -11,12 +11,12 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        ApiKeyBox.PasswordChanged += (_, _) => viewModel.ApiKeyInput = ApiKeyBox.Password;
         Loaded += async (_, _) =>
         {
             try
             {
                 await viewModel.InitializeAsync();
-                ApiKeyBox.PasswordChanged += (_, _) => viewModel.ApiKeyInput = ApiKeyBox.Password;
             }
             catch (Exception ex)
             {

@@ -17,6 +17,8 @@
         <conv:ChatSectionVisibilityConverter x:Key="SectionChatVisibility" />
         <conv:SectionVisibilityConverter x:Key="SectionModelsVisibility" TargetSection="{x:Static models:AppSection.Models}" />
         <conv:SectionVisibilityConverter x:Key="SectionSettingsVisibility" TargetSection="{x:Static models:AppSection.Settings}" />
+        <conv:LocalizedMessageRoleConverter x:Key="LocalizedMessageRole" />
+        <conv:LocalizedVideoStatusConverter x:Key="LocalizedVideoStatus" />
 
         <SolidColorBrush x:Key="DarkSurfaceBrush" Color="#1F2937" />
         <SolidColorBrush x:Key="DarkInputBrush" Color="#0F1115" />
@@ -35,7 +37,30 @@
         <Style x:Key="DarkComboBoxItem" TargetType="ComboBoxItem">
             <Setter Property="Background" Value="{StaticResource DarkSurfaceBrush}" />
             <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource DarkTextBrush}" />
             <Setter Property="Padding" Value="8,6" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+                        <Border x:Name="ItemBorder"
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource DarkAccentBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#374151" />
+                                <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
             <Style.Triggers>
                 <Trigger Property="IsHighlighted" Value="True">
                     <Setter Property="Background" Value="{StaticResource DarkAccentBrush}" />
@@ -67,8 +92,108 @@
             <Setter Property="Background" Value="{StaticResource DarkInputBrush}" />
             <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource DarkBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="6" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
             <Setter Property="ItemContainerStyle" Value="{StaticResource DarkComboBoxItem}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ComboBox}">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                        <Border x:Name="ToggleBorder"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition />
+                                                    <ColumnDefinition Width="28" />
+                                                </Grid.ColumnDefinitions>
+                                                <Path Grid.Column="1"
+                                                      Fill="{StaticResource DarkTextBrush}"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Data="M 0 0 L 4 4 L 8 0 Z" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="{StaticResource DarkAccentBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter TargetName="ToggleBorder" Property="Opacity" Value="0.55" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <ContentPresenter x:Name="ContentSite"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                              Margin="8,0,32,0"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+
+                            <TextBox x:Name="PART_EditableTextBox"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     CaretBrush="{StaticResource DarkTextBrush}"
+                                     Foreground="{TemplateBinding Foreground}"
+                                     HorizontalContentAlignment="Left"
+                                     IsReadOnly="{TemplateBinding IsReadOnly}"
+                                     Margin="6,2,32,2"
+                                     Padding="0"
+                                     VerticalContentAlignment="Center"
+                                     Visibility="Hidden" />
+
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Slide">
+                                <Grid MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                      MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <Border x:Name="DropDownBorder"
+                                            Background="{StaticResource DarkSurfaceBrush}"
+                                            BorderBrush="{StaticResource DarkBorderBrush}"
+                                            BorderThickness="1">
+                                        <ScrollViewer Margin="2" SnapsToDevicePixels="True">
+                                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEditable" Value="True">
+                                <Setter TargetName="ContentSite" Property="Visibility" Value="Hidden" />
+                                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="DropDownBorder" Property="MinHeight" Value="28" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="PasswordBox">

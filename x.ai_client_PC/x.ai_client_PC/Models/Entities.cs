@@ -98,6 +98,7 @@ public class AppSettingsEntity
 {
     public int Id { get; set; } = 1;
     public string BaseUrl { get; set; } = "https://api.x.ai/v1";
+    public string LanguageCode { get; set; } = "ru";
     public string? DefaultTextModelId { get; set; }
     public string? DefaultImageModelId { get; set; }
     public string? DefaultVideoModelId { get; set; }

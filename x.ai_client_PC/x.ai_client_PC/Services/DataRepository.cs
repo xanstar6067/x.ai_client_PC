@@ -16,6 +16,7 @@ public class DataRepository
     public async Task InitializeAsync()
     {
         await _db.Database.EnsureCreatedAsync();
+        await EnsureSettingsSchemaAsync();
 
         if (!await _db.Settings.AnyAsync())
         {
@@ -32,6 +33,18 @@ public class DataRepository
                 IsDefault = true
             });
             await _db.SaveChangesAsync();
+        }
+    }
+
+    private async Task EnsureSettingsSchemaAsync()
+    {
+        try
+        {
+            await _db.Database.ExecuteSqlRawAsync("ALTER TABLE Settings ADD COLUMN LanguageCode TEXT NOT NULL DEFAULT 'ru'");
+        }
+        catch (Exception ex) when (ex.Message.Contains("duplicate column", StringComparison.OrdinalIgnoreCase))
+        {
+            // Existing database already has the column.
         }
     }
 
