@@ -2,6 +2,14 @@ namespace x.ai_client_PC.Models;
 
 public class ChatSession
 {
+    public const double DefaultTemperature = 1.0;
+    public const double DefaultTopP = 1.0;
+    public const int DefaultMaxTokens = 4096;
+    public const int DefaultContextMessageLimit = 50;
+    public const string DefaultAspectRatio = "16:9";
+    public const string DefaultResolution = "1024x1024";
+    public const int DefaultVideoDurationSeconds = 5;
+
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public ChatKind Kind { get; set; }
     public string Title { get; set; } = "New chat";
@@ -14,13 +22,13 @@ public class ChatSession
     public double TotalCostUsd { get; set; }
     public int TotalTokens { get; set; }
 
-    public double Temperature { get; set; } = 1.0;
-    public double TopP { get; set; } = 1.0;
+    public double Temperature { get; set; } = DefaultTemperature;
+    public double TopP { get; set; } = DefaultTopP;
     public double FrequencyPenalty { get; set; }
     public double PresencePenalty { get; set; }
-    public int? MaxTokens { get; set; }
+    public int? MaxTokens { get; set; } = DefaultMaxTokens;
     public ReasoningEffort ReasoningEffort { get; set; } = ReasoningEffort.Medium;
-    public int ContextMessageLimit { get; set; } = 50;
+    public int ContextMessageLimit { get; set; } = DefaultContextMessageLimit;
     public bool WebSearchEnabled { get; set; }
 
     public string? AspectRatio { get; set; }
@@ -84,6 +92,8 @@ public class ModelInfo
     public double? ImagePrice { get; set; }
     public double? VideoPricePerSecond { get; set; }
     public string? RawJson { get; set; }
+
+    public override string ToString() => string.IsNullOrWhiteSpace(DisplayName) ? Id : DisplayName;
 }
 
 public class SystemRole
@@ -92,6 +102,8 @@ public class SystemRole
     public string Name { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public bool IsDefault { get; set; }
+
+    public override string ToString() => string.IsNullOrWhiteSpace(Name) ? Id : Name;
 }
 
 public class AppSettingsEntity

@@ -98,8 +98,7 @@ public class ChatGenerationService
         var request = new ChatCompletionRequest
         {
             Model = chat.ModelId,
-            PromptCacheKey = chat.PromptCacheKey,
-            SearchParameters = chat.WebSearchEnabled ? new SearchParametersDto { Mode = "auto" } : new SearchParametersDto { Mode = "off" }
+            PromptCacheKey = chat.PromptCacheKey
         };
 
         if (!XaiApiClient.IsMultiAgentModel(chat.ModelId))
@@ -198,7 +197,6 @@ public class ChatGenerationService
             Instructions = string.IsNullOrWhiteSpace(chat.LastResponseId) ? systemPrompt : null,
             PreviousResponseId = chat.LastResponseId,
             PromptCacheKey = chat.PromptCacheKey,
-            SearchParameters = chat.WebSearchEnabled ? new SearchParametersDto { Mode = "auto" } : new SearchParametersDto { Mode = "off" },
             Reasoning = new ReasoningDto { Effort = XaiApiClient.ToReasoningEffortString(chat.ReasoningEffort) }
         };
 

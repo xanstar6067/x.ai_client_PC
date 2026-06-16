@@ -306,13 +306,13 @@
                     <ComboBox SelectedValue="{Binding SelectedChat.ReasoningEffort}"
                               SelectedValuePath="Tag"
                               Margin="0,4,0,8">
-                        <ComboBoxItem Content="{Binding Data.Loc[ReasoningLow], Source={StaticResource VmProxy}}" Tag="Low" />
-                        <ComboBoxItem Content="{Binding Data.Loc[ReasoningMedium], Source={StaticResource VmProxy}}" Tag="Medium" />
-                        <ComboBoxItem Content="{Binding Data.Loc[ReasoningHigh], Source={StaticResource VmProxy}}" Tag="High" />
-                        <ComboBoxItem Content="{Binding Data.Loc[ReasoningXHigh], Source={StaticResource VmProxy}}" Tag="XHigh" />
+                        <ComboBoxItem Content="{Binding Data.Loc[ReasoningLow], Source={StaticResource VmProxy}}" Tag="{x:Static models:ReasoningEffort.Low}" />
+                        <ComboBoxItem Content="{Binding Data.Loc[ReasoningMedium], Source={StaticResource VmProxy}}" Tag="{x:Static models:ReasoningEffort.Medium}" />
+                        <ComboBoxItem Content="{Binding Data.Loc[ReasoningHigh], Source={StaticResource VmProxy}}" Tag="{x:Static models:ReasoningEffort.High}" />
+                        <ComboBoxItem Content="{Binding Data.Loc[ReasoningXHigh], Source={StaticResource VmProxy}}" Tag="{x:Static models:ReasoningEffort.XHigh}" />
                     </ComboBox>
 
-                    <CheckBox Content="{Binding Loc[WebSearchEnabled]}" IsChecked="{Binding SelectedChat.WebSearchEnabled}" Margin="0,0,0,8" />
+                    <CheckBox Content="{Binding Loc[WebSearchEnabled]}" IsChecked="{Binding SelectedChat.WebSearchEnabled}" IsEnabled="False" Margin="0,0,0,8" />
 
                     <TextBlock Text="{Binding Loc[ContextMessageLimit]}" />
                     <TextBox Text="{Binding SelectedChat.ContextMessageLimit}" Margin="0,4,0,12" />

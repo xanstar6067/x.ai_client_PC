@@ -23,6 +23,7 @@ public partial class MainViewModel : ObservableObject
 
     private CancellationTokenSource? _generationCts;
     private bool _isInitializing;
+    private bool _isLoadingSelectedChat;
 
     [ObservableProperty] private AppSection _currentSection = AppSection.Text;
     [ObservableProperty] private ChatKind _currentChatKind = ChatKind.Text;
@@ -138,8 +139,17 @@ public partial class MainViewModel : ObservableObject
         if (CurrentSection is AppSection.Text or AppSection.Images or AppSection.Videos)
         {
             await LoadChatsAsync();
-            SelectedChat = null;
-            Messages.Clear();
+            var firstChat = Chats.FirstOrDefault();
+            if (firstChat is not null)
+            {
+                await SelectChatAsync(firstChat);
+            }
+            else
+            {
+                SelectedChat = null;
+                Messages.Clear();
+                ApplyDefaultSelection();
+            }
         }
     }
 
@@ -174,9 +184,17 @@ public partial class MainViewModel : ObservableObject
             },
             ModelId = defaultModel?.Id ?? string.Empty,
             SystemRoleId = Roles.FirstOrDefault(r => r.IsDefault)?.Id,
-            AspectRatio = "16:9",
-            Resolution = "1024x1024",
-            VideoDurationSeconds = 5
+            Temperature = ChatSession.DefaultTemperature,
+            TopP = ChatSession.DefaultTopP,
+            MaxTokens = ChatSession.DefaultMaxTokens,
+            FrequencyPenalty = 0,
+            PresencePenalty = 0,
+            ReasoningEffort = ReasoningEffort.Medium,
+            ContextMessageLimit = ChatSession.DefaultContextMessageLimit,
+            WebSearchEnabled = false,
+            AspectRatio = ChatSession.DefaultAspectRatio,
+            Resolution = ChatSession.DefaultResolution,
+            VideoDurationSeconds = ChatSession.DefaultVideoDurationSeconds
         };
 
         await _repo.SaveChatAsync(chat);
@@ -192,10 +210,26 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        SelectedChat = await _repo.GetChatAsync(chat.Id);
+        var loadedChat = await _repo.GetChatAsync(chat.Id);
+        _isLoadingSelectedChat = true;
+        try
+        {
+            SelectedChat = loadedChat;
+        }
+        finally
+        {
+            _isLoadingSelectedChat = false;
+        }
+
         Messages.Clear();
         if (SelectedChat is not null)
         {
+            if (ApplyChatDefaults(SelectedChat))
+            {
+                await _repo.SaveChatAsync(SelectedChat);
+                OnPropertyChanged(nameof(SelectedChat));
+            }
+
             foreach (var msg in SelectedChat.Messages.Where(m => m.IsActiveVersion).OrderBy(m => m.CreatedAt))
             {
                 Messages.Add(msg);
@@ -523,6 +557,10 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
+        if (ApplyChatDefaults(SelectedChat))
+        {
+            OnPropertyChanged(nameof(SelectedChat));
+        }
         if (SelectedModel is not null)
         {
             SelectedChat.ModelId = SelectedModel.Id;
@@ -588,7 +626,7 @@ public partial class MainViewModel : ObservableObject
     partial void OnSelectedChatChanged(ChatSession? value)
     {
         OnPropertyChanged(nameof(ChatTitleText));
-        if (value is not null && (value.Messages is null || value.Messages.Count == 0))
+        if (!_isLoadingSelectedChat && value is not null && (value.Messages is null || value.Messages.Count == 0))
         {
             _ = SelectChatAsync(value);
         }
@@ -679,6 +717,7 @@ public partial class MainViewModel : ObservableObject
             return false;
         }
 
+        ApplyChatDefaults(SelectedChat);
         if (SelectedModel is not null)
         {
             SelectedChat.ModelId = SelectedModel.Id;
@@ -734,6 +773,7 @@ public partial class MainViewModel : ObservableObject
             Models.Add(model);
         }
 
+        ApplyDefaultSelection();
         OnPropertyChanged(nameof(LoadedModelsText));
     }
 
@@ -744,6 +784,107 @@ public partial class MainViewModel : ObservableObject
         {
             Roles.Add(role);
         }
+
+        ApplyDefaultSelection();
+    }
+
+    private ModelInfo? FindDefaultModel(ChatKind kind)
+    {
+        var targetCategory = kind switch
+        {
+            ChatKind.Image => ModelCategory.Image,
+            ChatKind.Video => ModelCategory.Video,
+            _ => ModelCategory.Text
+        };
+
+        return Models.FirstOrDefault(m => m.IsDefault && m.Category == targetCategory)
+            ?? Models.FirstOrDefault(m => m.Category == targetCategory)
+            ?? Models.FirstOrDefault(m => m.Category == ModelCategory.Text)
+            ?? Models.FirstOrDefault();
+    }
+
+    private SystemRole? FindDefaultRole() =>
+        Roles.FirstOrDefault(r => r.IsDefault) ?? Roles.FirstOrDefault();
+
+    private void ApplyDefaultSelection()
+    {
+        if (SelectedChat is not null)
+        {
+            return;
+        }
+
+        SelectedModel ??= FindDefaultModel(CurrentChatKind);
+        SelectedRole ??= FindDefaultRole();
+        UpdateModelConstraints();
+    }
+
+    private bool ApplyChatDefaults(ChatSession chat)
+    {
+        var changed = false;
+
+        var defaultModel = FindDefaultModel(chat.Kind);
+        if (string.IsNullOrWhiteSpace(chat.ModelId) && defaultModel is not null)
+        {
+            chat.ModelId = defaultModel.Id;
+            changed = true;
+        }
+
+        var defaultRole = FindDefaultRole();
+        if (string.IsNullOrWhiteSpace(chat.SystemRoleId) && defaultRole is not null)
+        {
+            chat.SystemRoleId = defaultRole.Id;
+            changed = true;
+        }
+
+        if (chat.Temperature <= 0)
+        {
+            chat.Temperature = ChatSession.DefaultTemperature;
+            changed = true;
+        }
+
+        if (chat.TopP <= 0)
+        {
+            chat.TopP = ChatSession.DefaultTopP;
+            changed = true;
+        }
+
+        if (chat.MaxTokens is null or <= 0)
+        {
+            chat.MaxTokens = ChatSession.DefaultMaxTokens;
+            changed = true;
+        }
+
+        if (chat.ContextMessageLimit <= 0)
+        {
+            chat.ContextMessageLimit = ChatSession.DefaultContextMessageLimit;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(chat.AspectRatio))
+        {
+            chat.AspectRatio = ChatSession.DefaultAspectRatio;
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(chat.Resolution))
+        {
+            chat.Resolution = ChatSession.DefaultResolution;
+            changed = true;
+        }
+
+        if (chat.VideoDurationSeconds is null or <= 0)
+        {
+            chat.VideoDurationSeconds = ChatSession.DefaultVideoDurationSeconds;
+            changed = true;
+        }
+
+        if (chat.WebSearchEnabled)
+        {
+            chat.WebSearchEnabled = false;
+            changed = true;
+        }
+
+        return changed;
     }
 
     private void RefreshLocalizedProperties()
