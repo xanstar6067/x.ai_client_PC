@@ -1,9 +1,118 @@
 ﻿<Application x:Class="x.ai_client_PC.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:x.ai_client_PC"
-             StartupUri="MainWindow.xaml">
+             xmlns:conv="clr-namespace:x.ai_client_PC.Converters"
+             xmlns:models="clr-namespace:x.ai_client_PC.Models">
     <Application.Resources>
-         
+        <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <conv:NullToVisibilityConverter x:Key="NullToVisibility" />
+        <conv:InvertBoolConverter x:Key="InvertBool" />
+        <conv:InvertBoolConverter x:Key="InvertBoolForMax" />
+        <conv:ApiKeyStatusConverter x:Key="ApiKeyStatus" />
+        <conv:AssistantRoleVisibilityConverter x:Key="AssistantVisibility" />
+        <conv:ImagePathConverter x:Key="ImagePath" />
+        <conv:ImagePathVisibilityConverter x:Key="ImagePathVisibility" />
+        <conv:VideoPathVisibilityConverter x:Key="VideoPathVisibility" />
+        <conv:VideoUriConverter x:Key="VideoUri" />
+        <conv:ChatSectionVisibilityConverter x:Key="SectionChatVisibility" />
+        <conv:SectionVisibilityConverter x:Key="SectionModelsVisibility" TargetSection="{x:Static models:AppSection.Models}" />
+        <conv:SectionVisibilityConverter x:Key="SectionSettingsVisibility" TargetSection="{x:Static models:AppSection.Settings}" />
+
+        <SolidColorBrush x:Key="DarkSurfaceBrush" Color="#1F2937" />
+        <SolidColorBrush x:Key="DarkInputBrush" Color="#0F1115" />
+        <SolidColorBrush x:Key="DarkTextBrush" Color="#E8EAED" />
+        <SolidColorBrush x:Key="DarkBorderBrush" Color="#374151" />
+        <SolidColorBrush x:Key="DarkAccentBrush" Color="#2563EB" />
+
+        <!-- Override system popup colors for dark ComboBox dropdowns -->
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#1F2937" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#E8EAED" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#0F1115" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#E8EAED" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2563EB" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF" />
+
+        <Style x:Key="DarkComboBoxItem" TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{StaticResource DarkSurfaceBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="Padding" Value="8,6" />
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="{StaticResource DarkAccentBrush}" />
+                    <Setter Property="Foreground" Value="White" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#374151" />
+                    <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource DarkAccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource DarkInputBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource DarkBorderBrush}" />
+            <Setter Property="CaretBrush" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="Padding" Value="6" />
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{StaticResource DarkInputBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource DarkBorderBrush}" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource DarkComboBoxItem}" />
+        </Style>
+
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource DarkInputBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource DarkBorderBrush}" />
+            <Setter Property="CaretBrush" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="Padding" Value="6" />
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#374151" />
+                    <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#252F3F" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="DataGrid">
+            <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="Background" Value="{StaticResource DarkSurfaceBrush}" />
+            <Setter Property="RowBackground" Value="{StaticResource DarkSurfaceBrush}" />
+            <Setter Property="AlternatingRowBackground" Value="#252F3F" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource DarkBorderBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource DarkBorderBrush}" />
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#252F3F" />
+            <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource DarkBorderBrush}" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="Foreground" Value="{StaticResource DarkTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource DarkBorderBrush}" />
+        </Style>
     </Application.Resources>
 </Application>

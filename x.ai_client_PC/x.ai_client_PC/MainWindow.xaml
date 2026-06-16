@@ -3,10 +3,328 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:x.ai_client_PC"
+        xmlns:models="clr-namespace:x.ai_client_PC.Models"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="xAI Grok Chat" Height="900" Width="1400" MinHeight="600" MinWidth="1000"
+        Background="#0F1115" Foreground="#E8EAED"
+        KeyDown="Window_KeyDown"
+        AllowDrop="True"
+        Drop="Window_Drop"
+        DragOver="Window_DragOver">
+    <Window.InputBindings>
+        <KeyBinding Key="N" Modifiers="Ctrl" Command="{Binding NewChatCommand}" />
+        <KeyBinding Key="F" Modifiers="Ctrl" Command="{Binding SelectSectionCommand}" CommandParameter="Text" />
+    </Window.InputBindings>
 
+    <Grid Margin="8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280" MinWidth="220" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MinWidth="400" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="320" MinWidth="260" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Left panel -->
+        <Border Grid.Column="0" Background="#161B22" CornerRadius="8" Padding="12">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="xAI Grok Chat" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <Button Content="Text" Margin="0,2" Padding="8,6"
+                            Command="{Binding SelectSectionCommand}" CommandParameter="Text" />
+                    <Button Content="Images" Margin="0,2" Padding="8,6"
+                            Command="{Binding SelectSectionCommand}" CommandParameter="Images" />
+                    <Button Content="Videos" Margin="0,2" Padding="8,6"
+                            Command="{Binding SelectSectionCommand}" CommandParameter="Videos" />
+                    <Button Content="Models" Margin="0,2" Padding="8,6"
+                            Command="{Binding SelectSectionCommand}" CommandParameter="Models" />
+                    <Button Content="Settings" Margin="0,2" Padding="8,6"
+                            Command="{Binding SelectSectionCommand}" CommandParameter="Settings" />
+                </StackPanel>
+
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="New" Command="{Binding NewChatCommand}" Padding="10,4" Margin="0,0,6,0" />
+                    <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" Width="150"
+                             ToolTip="Ctrl+F focuses chat search" />
+                </StackPanel>
+
+                <ListBox ItemsSource="{Binding FilteredChats}"
+                         SelectedItem="{Binding SelectedChat}"
+                         DisplayMemberPath="Title"
+                         Background="Transparent" BorderThickness="0">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="6" />
+                            <EventSetter Event="MouseDoubleClick" Handler="ChatItem_DoubleClick" />
+                            <Setter Property="ContextMenu">
+                                <Setter.Value>
+                                    <ContextMenu>
+                                        <MenuItem Header="Duplicate" Command="{Binding DataContext.DuplicateChatCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" />
+                                        <MenuItem Header="Delete" Command="{Binding DataContext.DeleteChatCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" />
+                                    </ContextMenu>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" Background="Transparent" />
+
+        <!-- Center panel -->
+        <Border Grid.Column="2" Background="#161B22" CornerRadius="8" Padding="12">
+            <Grid>
+                <!-- Text / Image / Video chat view -->
+                <DockPanel Visibility="{Binding CurrentSection, Converter={StaticResource SectionChatVisibility}}">
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding SelectedChat.Title, FallbackValue='Select or create a chat'}"
+                               FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" />
+
+                    <StackPanel DockPanel.Dock="Bottom">
+                        <ItemsControl ItemsSource="{Binding PendingAttachments}" Margin="0,0,0,6">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" Foreground="#9CA3AF" FontSize="11" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBox x:Name="InputBox" Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True" MinHeight="80" MaxHeight="160"
+                                 TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                 PreviewKeyDown="InputBox_PreviewKeyDown" />
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="Send" Command="{Binding SendCommand}" Padding="12,6" Margin="0,0,6,0" />
+                            <Button Content="Stop" Command="{Binding StopCommand}" Padding="12,6" Margin="0,0,6,0" />
+                            <Button Content="Attach" Command="{Binding AttachFilesCommand}" Padding="12,6" Margin="0,0,6,0" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding StatusMessage}" Foreground="#9CA3AF" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
+                        <ItemsControl ItemsSource="{Binding Messages}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:ChatMessage}">
+                                    <Border Margin="0,6" Padding="10" CornerRadius="6"
+                                            Background="#1F2937">
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{Binding Role}" />
+                                            <TextBlock Text="{Binding Content}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding ReasoningContent}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                       Foreground="#9CA3AF" FontStyle="Italic"
+                                                       Visibility="{Binding ReasoningContent, Converter={StaticResource NullToVisibility}}" />
+                                            <TextBlock Margin="0,4,0,0" Foreground="#9CA3AF" FontSize="11"
+                                                       Visibility="{Binding VideoRequestId, Converter={StaticResource NullToVisibility}}">
+                                                <Run Text="Request ID: " />
+                                                <Run Text="{Binding VideoRequestId}" />
+                                                <Run Text=" | Status: " />
+                                                <Run Text="{Binding VideoStatus}" />
+                                            </TextBlock>
+                                            <Image MaxHeight="320" Margin="0,8,0,0"
+                                                   Source="{Binding MediaLocalPath, Converter={StaticResource ImagePath}}"
+                                                   Visibility="{Binding MediaLocalPath, Converter={StaticResource ImagePathVisibility}}" />
+                                            <MediaElement MaxHeight="320" Margin="0,8,0,0" LoadedBehavior="Play"
+                                                          UnloadedBehavior="Stop"
+                                                          Source="{Binding MediaLocalPath, Converter={StaticResource VideoUri}}"
+                                                          Visibility="{Binding MediaLocalPath, Converter={StaticResource VideoPathVisibility}}" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Button Content="Edit" Padding="8,4" Margin="0,0,6,0"
+                                                        Command="{Binding DataContext.EditMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Content="Branch" Padding="8,4" Margin="0,0,6,0"
+                                                        Command="{Binding DataContext.BranchMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Content="Regenerate" Padding="8,4" Margin="0,0,6,0"
+                                                        Command="{Binding DataContext.RegenerateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Visibility="{Binding Role, Converter={StaticResource AssistantVisibility}}" />
+                                                <Button Content="Save media" Padding="8,4"
+                                                        Command="{Binding DataContext.SaveMediaCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Visibility="{Binding MediaLocalPath, Converter={StaticResource NullToVisibility}}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+
+                <!-- Models view -->
+                <DockPanel Visibility="{Binding CurrentSection, Converter={StaticResource SectionModelsVisibility}}">
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Models" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Button Content="Load from API" Margin="12,0,0,0" Padding="10,4"
+                                    Command="{Binding RefreshModelsCommand}" />
+                        </StackPanel>
+                        <TextBlock Text="Enable models, set defaults and prices. Save API key in Settings first."
+                                   Foreground="#9CA3AF" Margin="0,6,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <DataGrid ItemsSource="{Binding Models}" AutoGenerateColumns="False" CanUserAddRows="False">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding IsEnabled}" Width="70" />
+                            <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="*" IsReadOnly="True" />
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="80" IsReadOnly="True" />
+                            <DataGridCheckBoxColumn Header="Default" Binding="{Binding IsDefault}" Width="70" />
+                            <DataGridTextColumn Header="Input $/M" Binding="{Binding InputPricePerMillion}" Width="80" />
+                            <DataGridTextColumn Header="Output $/M" Binding="{Binding OutputPricePerMillion}" Width="80" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+
+                <!-- Settings view -->
+                <ScrollViewer Visibility="{Binding CurrentSection, Converter={StaticResource SectionSettingsVisibility}}"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Text="Settings" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+                        <TextBlock Text="This app does not provide free access to xAI API. You need your own API key."
+                                   TextWrapping="Wrap" Foreground="#F59E0B" Margin="0,0,0,12" />
+
+                        <TextBlock Text="API Key (stored in Windows Credential Manager)" />
+                        <PasswordBox x:Name="ApiKeyBox" Margin="0,4,0,8" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button Content="Save API Key" Command="{Binding SaveApiKeyCommand}" Padding="10,4" Margin="0,0,6,0" />
+                            <Button Content="Validate" Command="{Binding ValidateApiKeyCommand}" Padding="10,4" />
+                            <TextBlock VerticalAlignment="Center" Margin="12,0,0,0"
+                                       Text="{Binding HasApiKey, Converter={StaticResource ApiKeyStatus}}" />
+                        </StackPanel>
+
+                        <TextBlock Text="Base URL" />
+                        <TextBox Text="{Binding Settings.BaseUrl}" Margin="0,4,0,12" />
+
+                        <TextBlock Text="Models" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <TextBlock Text="Load available text, image and video models from xAI API. Requires a saved API key."
+                                   TextWrapping="Wrap" Foreground="#9CA3AF" Margin="0,0,0,8" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button Content="Load models from API" Command="{Binding RefreshModelsCommand}" Padding="10,4" Margin="0,0,8,0" />
+                            <Button Content="Open Models screen" Command="{Binding SelectSectionCommand}" CommandParameter="Models" Padding="10,4" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Models.Count, StringFormat='Loaded models: {0}'}" Foreground="#9CA3AF" Margin="0,0,0,12" />
+
+                        <TextBlock Text="System Roles" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <ItemsControl ItemsSource="{Binding Roles}" Margin="0,0,0,8">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:SystemRole}">
+                                    <StackPanel Margin="0,0,0,8">
+                                        <TextBox Text="{Binding Name}" />
+                                        <TextBox Text="{Binding Content}" AcceptsReturn="True" MinHeight="60" TextWrapping="Wrap" />
+                                        <Button Content="Save role" HorizontalAlignment="Left" Margin="0,4,0,0"
+                                                Command="{Binding DataContext.SaveRoleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Button Content="Add role" Command="{Binding AddRoleCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" />
+
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Save settings" Command="{Binding SaveSettingsCommand}" Padding="10,4" Margin="0,0,6,0" />
+                            <Button Content="Export backup" Command="{Binding ExportBackupCommand}" Padding="10,4" Margin="0,0,6,0" />
+                            <Button Content="Import backup" Command="{Binding ImportBackupCommand}" Padding="10,4" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <GridSplitter Grid.Column="3" Width="6" HorizontalAlignment="Center" Background="Transparent" />
+
+        <!-- Right panel -->
+        <Border Grid.Column="4" Background="#161B22" CornerRadius="8" Padding="12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="Chat settings" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,12" />
+
+                    <TextBlock Text="Model" />
+                    <ComboBox ItemsSource="{Binding Models}"
+                              SelectedItem="{Binding SelectedModel}"
+                              DisplayMemberPath="DisplayName"
+                              Margin="0,4,0,12" />
+
+                    <TextBlock Text="{Binding MultiAgentNotice}" TextWrapping="Wrap" Foreground="#F59E0B"
+                               Visibility="{Binding IsMultiAgentModel, Converter={StaticResource BoolToVisibility}}"
+                               Margin="0,0,0,12" />
+
+                    <TextBlock Text="System role" />
+                    <ComboBox ItemsSource="{Binding Roles}"
+                              SelectedItem="{Binding SelectedRole}"
+                              DisplayMemberPath="Name"
+                              Margin="0,4,0,12" />
+
+                    <TextBlock Text="Temperature" />
+                    <TextBox Text="{Binding SelectedChat.Temperature}" Margin="0,4,0,8"
+                             IsEnabled="{Binding IsMultiAgentModel, Converter={StaticResource InvertBool}}" />
+
+                    <TextBlock Text="Top P" />
+                    <TextBox Text="{Binding SelectedChat.TopP}" Margin="0,4,0,8"
+                             IsEnabled="{Binding IsMultiAgentModel, Converter={StaticResource InvertBool}}" />
+
+                    <TextBlock Text="Max tokens" />
+                    <TextBox Text="{Binding SelectedChat.MaxTokens}" Margin="0,4,0,8"
+                             IsEnabled="{Binding IsMultiAgentModel, Converter={StaticResource InvertBoolForMax}}" />
+
+                    <TextBlock Text="Frequency penalty" />
+                    <TextBox Text="{Binding SelectedChat.FrequencyPenalty}" Margin="0,4,0,8"
+                             IsEnabled="{Binding IsMultiAgentModel, Converter={StaticResource InvertBoolForMax}}" />
+
+                    <TextBlock Text="Presence penalty" />
+                    <TextBox Text="{Binding SelectedChat.PresencePenalty}" Margin="0,4,0,8"
+                             IsEnabled="{Binding IsMultiAgentModel, Converter={StaticResource InvertBoolForMax}}" />
+
+                    <TextBlock Text="Reasoning effort" />
+                    <ComboBox SelectedValue="{Binding SelectedChat.ReasoningEffort}"
+                              SelectedValuePath="Tag"
+                              Margin="0,4,0,8">
+                        <ComboBoxItem Content="Low" Tag="Low" />
+                        <ComboBoxItem Content="Medium" Tag="Medium" />
+                        <ComboBoxItem Content="High" Tag="High" />
+                        <ComboBoxItem Content="XHigh" Tag="XHigh" />
+                    </ComboBox>
+
+                    <CheckBox Content="Web search enabled" IsChecked="{Binding SelectedChat.WebSearchEnabled}" Margin="0,0,0,8" />
+
+                    <TextBlock Text="Context message limit" />
+                    <TextBox Text="{Binding SelectedChat.ContextMessageLimit}" Margin="0,4,0,12" />
+
+                    <TextBlock Text="Image / Video options" FontWeight="SemiBold" Margin="0,8,0,6" />
+                    <TextBlock Text="Aspect ratio" />
+                    <ComboBox Text="{Binding SelectedChat.AspectRatio}" IsEditable="True" Margin="0,4,0,8">
+                        <ComboBoxItem Content="1:1" />
+                        <ComboBoxItem Content="16:9" />
+                        <ComboBoxItem Content="9:16" />
+                        <ComboBoxItem Content="4:3" />
+                    </ComboBox>
+                    <TextBlock Text="Resolution" />
+                    <ComboBox Text="{Binding SelectedChat.Resolution}" IsEditable="True" Margin="0,4,0,8">
+                        <ComboBoxItem Content="1024x1024" />
+                        <ComboBoxItem Content="1280x720" />
+                        <ComboBoxItem Content="1920x1080" />
+                    </ComboBox>
+                    <TextBlock Text="Video duration (seconds)" />
+                    <TextBox Text="{Binding SelectedChat.VideoDurationSeconds}" Margin="0,4,0,8" />
+                    <TextBlock Text="Source image path" />
+                    <TextBox Text="{Binding SelectedChat.SourceImagePath}" Margin="0,4,0,8" />
+                    <TextBlock Text="Source image URL" />
+                    <TextBox Text="{Binding SelectedChat.SourceImageUrl}" Margin="0,4,0,12" />
+
+                    <Button Content="Apply settings" Command="{Binding SaveChatSettingsCommand}" Padding="10,4" Margin="0,0,0,16" />
+
+                    <TextBlock Text="Last request" FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <TextBlock>
+                        <Run Text="Cost: $" />
+                        <Run Text="{Binding LastRequestCost, StringFormat=F4}" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding LastPromptTokens, StringFormat='Prompt tokens: {0}'}" />
+                    <TextBlock Text="{Binding LastCompletionTokens, StringFormat='Completion tokens: {0}'}" />
+                    <TextBlock Text="{Binding LastReasoningTokens, StringFormat='Reasoning tokens: {0}'}" />
+                    <TextBlock Margin="0,8,0,0">
+                        <Run Text="Chat total cost: $" />
+                        <Run Text="{Binding SelectedChat.TotalCostUsd, StringFormat=F4, FallbackValue=0}" />
+                    </TextBlock>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
     </Grid>
 </Window>
