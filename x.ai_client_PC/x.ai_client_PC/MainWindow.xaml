@@ -449,7 +449,7 @@
                                Margin="0,4,0,14" />
 
                     <TextBlock Text="Text" FontSize="16" FontWeight="SemiBold" />
-                    <TextBlock Text="Reasoning effort" Margin="0,8,0,2" />
+                    <TextBlock x:Name="ReasoningEffortLabel" Text="Reasoning effort" Margin="0,8,0,2" />
                     <ComboBox x:Name="ReasoningEffortCombo" SelectionChanged="SettingsControl_Changed">
                         <ComboBoxItem Content="none" />
                         <ComboBoxItem Content="low" />
@@ -457,15 +457,15 @@
                         <ComboBoxItem Content="high" />
                         <ComboBoxItem Content="xhigh" />
                     </ComboBox>
-                    <TextBlock Text="Temperature" Margin="0,8,0,2" />
+                    <TextBlock x:Name="TemperatureLabel" Text="Temperature" Margin="0,8,0,2" />
                     <TextBox x:Name="TemperatureBox" TextChanged="SettingsControl_Changed" />
-                    <TextBlock Text="Top P" Margin="0,8,0,2" />
+                    <TextBlock x:Name="TopPLabel" Text="Top P" Margin="0,8,0,2" />
                     <TextBox x:Name="TopPBox" TextChanged="SettingsControl_Changed" />
-                    <TextBlock Text="Max output tokens, 0 = auto" Margin="0,8,0,2" />
+                    <TextBlock x:Name="MaxTokensLabel" Text="Max output tokens, 0 = auto" Margin="0,8,0,2" />
                     <TextBox x:Name="MaxTokensBox" TextChanged="SettingsControl_Changed" />
-                    <TextBlock Text="Frequency penalty" Margin="0,8,0,2" />
+                    <TextBlock x:Name="FrequencyPenaltyLabel" Text="Frequency penalty" Margin="0,8,0,2" />
                     <TextBox x:Name="FrequencyPenaltyBox" TextChanged="SettingsControl_Changed" />
-                    <TextBlock Text="Presence penalty" Margin="0,8,0,2" />
+                    <TextBlock x:Name="PresencePenaltyLabel" Text="Presence penalty" Margin="0,8,0,2" />
                     <TextBox x:Name="PresencePenaltyBox" TextChanged="SettingsControl_Changed" />
                     <TextBlock Text="Context messages" Margin="0,8,0,2" />
                     <TextBox x:Name="ContextLimitBox" TextChanged="SettingsControl_Changed" />

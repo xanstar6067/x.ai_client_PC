@@ -195,6 +195,20 @@ public sealed class ModelCatalog
     public string Status { get; set; } = "Локальные значения по умолчанию";
 }
 
+public sealed class TextModelParameterProfile
+{
+    public string Model { get; set; } = string.Empty;
+    public bool IsReasoning { get; set; }
+    public bool IsMultiAgent { get; set; }
+    public bool IsNonReasoning { get; set; }
+    public bool SupportsReasoningEffort { get; set; }
+    public bool SupportsSampling { get; set; } = true;
+    public bool SupportsMaxOutputTokens { get; set; } = true;
+    public bool SupportsPenalties { get; set; } = true;
+    public IReadOnlyList<string> ReasoningEfforts { get; set; } = [];
+    public string Summary { get; set; } = string.Empty;
+}
+
 public sealed class XaiUsage
 {
     public long PromptTokens { get; set; }

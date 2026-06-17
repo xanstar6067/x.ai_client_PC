@@ -37,6 +37,7 @@ public partial class MainWindow : Window
         ApplySettingsToControls();
         PopulateModelCombo();
         RefreshCredentialStatus();
+        UpdateStarterApiKeyHint();
         SelectSection("Text");
     }
 
@@ -771,7 +772,10 @@ public partial class MainWindow : Window
             _credentialVault.SaveApiKey(key);
             ApiKeyBox.Clear();
             RefreshCredentialStatus();
-            MessageBox.Show(this, "API key сохранён в Windows Credential Manager.", "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
+            UpdateStarterApiKeyHint();
+            RenderMessages();
+            _storage.Save(_state);
+            MessageBox.Show(this, "API key сохранён: " + _credentialVault.StorageDescription, "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception exception)
         {
@@ -786,6 +790,9 @@ public partial class MainWindow : Window
             _credentialVault.DeleteApiKey();
             ApiKeyBox.Clear();
             RefreshCredentialStatus();
+            UpdateStarterApiKeyHint();
+            RenderMessages();
+            _storage.Save(_state);
         }
         catch (Exception exception)
         {
@@ -1218,6 +1225,29 @@ public partial class MainWindow : Window
         _loadingControls = false;
     }
 
+    private void ConfigureReasoningEffortOptions(TextModelParameterProfile profile)
+    {
+        var current = _state.Settings.ReasoningEffort;
+        _loadingControls = true;
+        ReasoningEffortCombo.Items.Clear();
+
+        foreach (var effort in profile.ReasoningEfforts)
+        {
+            ReasoningEffortCombo.Items.Add(new ComboBoxItem { Content = effort });
+        }
+
+        if (profile.ReasoningEfforts.Count > 0)
+        {
+            var selected = profile.ReasoningEfforts.Contains(current, StringComparer.OrdinalIgnoreCase)
+                ? current
+                : profile.ReasoningEfforts.Contains("low") ? "low" : profile.ReasoningEfforts[0];
+            SelectComboValue(ReasoningEffortCombo, selected);
+            _state.Settings.ReasoningEffort = selected;
+        }
+
+        _loadingControls = false;
+    }
+
     private void SyncSettingsFromControls()
     {
         if (_state.Settings is null)
@@ -1253,21 +1283,23 @@ public partial class MainWindow : Window
             return;
         }
 
-        var model = _state.Settings.TextModel;
-        var isMultiAgent = model.Contains("multi-agent", StringComparison.OrdinalIgnoreCase)
-                           || model.Contains("4.20", StringComparison.OrdinalIgnoreCase);
-        var isReasoning = model.Contains("grok-4", StringComparison.OrdinalIgnoreCase)
-                          || model.Contains("reasoning", StringComparison.OrdinalIgnoreCase);
+        var profile = XaiClient.GetTextModelParameterProfile(_state.Settings.TextModel);
+        ConfigureReasoningEffortOptions(profile);
 
-        MaxTokensBox.IsEnabled = !isMultiAgent;
-        FrequencyPenaltyBox.IsEnabled = !isMultiAgent && !isReasoning;
-        PresencePenaltyBox.IsEnabled = !isMultiAgent && !isReasoning;
+        SetControlVisibility(ReasoningEffortLabel, profile.SupportsReasoningEffort);
+        SetControlVisibility(ReasoningEffortCombo, profile.SupportsReasoningEffort);
+        SetControlVisibility(TemperatureLabel, profile.SupportsSampling);
+        SetControlVisibility(TemperatureBox, profile.SupportsSampling);
+        SetControlVisibility(TopPLabel, profile.SupportsSampling);
+        SetControlVisibility(TopPBox, profile.SupportsSampling);
+        SetControlVisibility(MaxTokensLabel, profile.SupportsMaxOutputTokens);
+        SetControlVisibility(MaxTokensBox, profile.SupportsMaxOutputTokens);
+        SetControlVisibility(FrequencyPenaltyLabel, profile.SupportsPenalties);
+        SetControlVisibility(FrequencyPenaltyBox, profile.SupportsPenalties);
+        SetControlVisibility(PresencePenaltyLabel, profile.SupportsPenalties);
+        SetControlVisibility(PresencePenaltyBox, profile.SupportsPenalties);
 
-        CompatibilityText.Text = isMultiAgent
-            ? "Multi-Agent: max tokens и penalties отключены; effort управляет числом агентов."
-            : isReasoning
-                ? "Reasoning model: penalties отключены, effort управляет глубиной reasoning."
-                : "Параметры совместимы с обычной текстовой моделью.";
+        CompatibilityText.Text = profile.Summary;
     }
 
     private void UpdateUsagePanel()
@@ -1285,11 +1317,38 @@ public partial class MainWindow : Window
     {
         var hasKey = _credentialVault.HasApiKey();
         CredentialStatusText.Text = hasKey
-            ? "API key сохранён"
+            ? "API key сохранён: " + _credentialVault.StorageDescription
             : "API key не сохранён";
         CredentialStatusText.Foreground = hasKey
             ? (Brush)FindResource("SuccessBrush")
             : (Brush)FindResource("WarningBrush");
+    }
+
+    private void UpdateStarterApiKeyHint()
+    {
+        var hasKey = _credentialVault.HasApiKey();
+        foreach (var chat in _state.TextChats)
+        {
+            if (chat.Messages.Count != 1)
+            {
+                continue;
+            }
+
+            var message = chat.Messages[0];
+            if (message.Role != "assistant" || !message.Content.Contains("API key", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            message.Content = hasKey
+                ? "API key сохранён. Выберите модель, настройте параметры справа и отправьте сообщение."
+                : "Готов к работе. Вставьте xAI API key в Settings, выберите модель и отправьте сообщение.";
+        }
+    }
+
+    private static void SetControlVisibility(UIElement element, bool isVisible)
+    {
+        element.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private string? EnsureApiKey(bool showSettingsOnMissing = true)

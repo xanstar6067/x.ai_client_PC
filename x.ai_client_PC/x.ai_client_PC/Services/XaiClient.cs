@@ -88,6 +88,63 @@ public sealed class XaiClient : IDisposable
         };
     }
 
+    public static TextModelParameterProfile GetTextModelParameterProfile(string model)
+    {
+        var modelId = model ?? string.Empty;
+        var normalized = modelId.Trim().ToLowerInvariant();
+        var isMultiAgent = normalized.Contains("multi-agent", StringComparison.OrdinalIgnoreCase);
+        var isNonReasoning = normalized.Contains("non-reasoning", StringComparison.OrdinalIgnoreCase)
+                             || normalized.Contains("non_reasoning", StringComparison.OrdinalIgnoreCase);
+        var isGrok43Reasoning = normalized.StartsWith("grok-4.3", StringComparison.OrdinalIgnoreCase);
+        var isExplicitReasoning = normalized.Contains("reasoning", StringComparison.OrdinalIgnoreCase) && !isNonReasoning;
+        var isReasoning = isGrok43Reasoning || isExplicitReasoning || isMultiAgent;
+
+        if (isMultiAgent)
+        {
+            return new TextModelParameterProfile
+            {
+                Model = modelId,
+                IsReasoning = true,
+                IsMultiAgent = true,
+                SupportsReasoningEffort = true,
+                SupportsSampling = false,
+                SupportsMaxOutputTokens = false,
+                SupportsPenalties = false,
+                ReasoningEfforts = ["low", "medium", "high", "xhigh"],
+                Summary = "Multi-Agent: reasoning.effort управляет числом агентов; sampling, max tokens и penalties не отправляются."
+            };
+        }
+
+        if (isReasoning && !isNonReasoning)
+        {
+            return new TextModelParameterProfile
+            {
+                Model = modelId,
+                IsReasoning = true,
+                SupportsReasoningEffort = true,
+                SupportsSampling = true,
+                SupportsMaxOutputTokens = true,
+                SupportsPenalties = false,
+                ReasoningEfforts = ["none", "low", "medium", "high"],
+                Summary = "Reasoning: отправляется reasoning.effort; presence/frequency penalties не отправляются."
+            };
+        }
+
+        return new TextModelParameterProfile
+        {
+            Model = modelId,
+            IsNonReasoning = isNonReasoning,
+            SupportsReasoningEffort = false,
+            SupportsSampling = true,
+            SupportsMaxOutputTokens = true,
+            SupportsPenalties = true,
+            ReasoningEfforts = [],
+            Summary = isNonReasoning
+                ? "Non-reasoning: reasoning.effort полностью убран из запроса; sampling и penalties доступны."
+                : "Обычная текстовая модель: reasoning.effort не отправляется; sampling и penalties доступны."
+        };
+    }
+
     public async Task<ModelCatalog> LoadModelsAsync(AppSettings settings, string? apiKey, CancellationToken cancellationToken)
     {
         var catalog = CreateDefaultCatalog();
@@ -337,7 +394,7 @@ public sealed class XaiClient : IDisposable
 
     private static Dictionary<string, object?> BuildResponsesPayload(AppSettings settings, ChatSession chat, ChatMessage userMessage)
     {
-        var isMultiAgent = IsMultiAgentModel(settings.TextModel);
+        var profile = GetTextModelParameterProfile(settings.TextModel);
         var usePreviousResponseId = settings.StoreServerResponses
                                     && settings.UsePreviousResponseId
                                     && !string.IsNullOrWhiteSpace(chat.LastResponseId);
@@ -346,7 +403,6 @@ public sealed class XaiClient : IDisposable
             ? [ToApiMessage(userMessage)]
             : BuildContextMessages(settings, chat);
 
-        var effort = NormalizeReasoningEffort(settings.ReasoningEffort, isMultiAgent);
         var payload = new Dictionary<string, object?>
         {
             ["model"] = settings.TextModel,
@@ -355,8 +411,9 @@ public sealed class XaiClient : IDisposable
             ["stream"] = true
         };
 
-        if (!string.IsNullOrWhiteSpace(effort))
+        if (profile.SupportsReasoningEffort)
         {
+            var effort = NormalizeReasoningEffort(settings.ReasoningEffort, profile);
             payload["reasoning"] = new Dictionary<string, object?> { ["effort"] = effort };
         }
 
@@ -365,20 +422,24 @@ public sealed class XaiClient : IDisposable
             payload["previous_response_id"] = chat.LastResponseId;
         }
 
-        if (!isMultiAgent)
+        if (profile.SupportsSampling)
         {
             payload["temperature"] = settings.Temperature;
             payload["top_p"] = settings.TopP;
+        }
+
+        if (profile.SupportsMaxOutputTokens)
+        {
             if (settings.MaxOutputTokens > 0)
             {
                 payload["max_output_tokens"] = settings.MaxOutputTokens;
             }
+        }
 
-            if (!IsReasoningModel(settings.TextModel))
-            {
-                payload["frequency_penalty"] = settings.FrequencyPenalty;
-                payload["presence_penalty"] = settings.PresencePenalty;
-            }
+        if (profile.SupportsPenalties)
+        {
+            payload["frequency_penalty"] = settings.FrequencyPenalty;
+            payload["presence_penalty"] = settings.PresencePenalty;
         }
 
         var tools = new List<Dictionary<string, string>>();
@@ -390,11 +451,6 @@ public sealed class XaiClient : IDisposable
         if (settings.XSearchEnabled)
         {
             tools.Add(new Dictionary<string, string> { ["type"] = "x_search" });
-        }
-
-        if (isMultiAgent && tools.Count == 0)
-        {
-            tools.Add(new Dictionary<string, string> { ["type"] = "web_search" });
         }
 
         if (tools.Count > 0)
@@ -773,31 +829,17 @@ public sealed class XaiClient : IDisposable
         return $"data:{mimeType};base64,{Convert.ToBase64String(bytes)}";
     }
 
-    private static bool IsMultiAgentModel(string model)
-    {
-        return model.Contains("multi-agent", StringComparison.OrdinalIgnoreCase)
-               || model.Contains("4.20", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsReasoningModel(string model)
-    {
-        return model.Contains("grok-4", StringComparison.OrdinalIgnoreCase)
-               || model.Contains("reasoning", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeReasoningEffort(string effort, bool isMultiAgent)
+    private static string NormalizeReasoningEffort(string effort, TextModelParameterProfile profile)
     {
         var normalized = string.IsNullOrWhiteSpace(effort) ? "low" : effort.Trim().ToLowerInvariant();
-        var allowed = isMultiAgent
-            ? new HashSet<string>(["low", "medium", "high", "xhigh"], StringComparer.OrdinalIgnoreCase)
-            : new HashSet<string>(["none", "low", "medium", "high"], StringComparer.OrdinalIgnoreCase);
+        var allowed = profile.ReasoningEfforts.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         if (allowed.Contains(normalized))
         {
             return normalized;
         }
 
-        return isMultiAgent ? "high" : "low";
+        return allowed.Contains("low") ? "low" : allowed.FirstOrDefault() ?? "low";
     }
 
     private static IReadOnlyList<string> GetStringArray(JsonElement element, string propertyName)
