@@ -47,7 +47,7 @@ public sealed class AppStorage
     {
         var json = File.ReadAllText(sourcePath);
         var state = JsonSerializer.Deserialize<PersistedState>(json, _jsonOptions)
-                    ?? throw new InvalidDataException("Backup не содержит состояние приложения.");
+                    ?? throw new InvalidDataException("Резервная копия не содержит состояние приложения.");
         Normalize(state);
         return state;
     }
@@ -85,7 +85,7 @@ public sealed class AppStorage
                         new ChatMessage
                         {
                             Role = "assistant",
-                            Content = "Готов к работе. Вставьте xAI API key в Settings, выберите модель и отправьте сообщение."
+                            Content = "Готов к работе. Вставьте xAI API-ключ в настройках, выберите модель и отправьте сообщение."
                         }
                     ]
                 }

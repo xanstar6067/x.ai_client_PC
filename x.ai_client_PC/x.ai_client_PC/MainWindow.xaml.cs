@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     private string _currentSection = "Text";
     private CancellationTokenSource? _currentRequest;
     private bool _loadingControls;
+    private bool _apiKeyVisible;
     private MediaItem? _selectedImageItem;
     private MediaItem? _selectedVideoItem;
 
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
         ApplySettingsToControls();
         PopulateModelCombo();
         RefreshCredentialStatus();
+        LoadSavedApiKeyIntoEditor();
         UpdateStarterApiKeyHint();
         SelectSection("Text");
     }
@@ -265,7 +267,7 @@ public partial class MainWindow : Window
                     Dispatcher.Invoke(() =>
                     {
                         reasoningBuffer += delta;
-                        CompatibilityText.Text = "Reasoning summary streaming...";
+                        CompatibilityText.Text = "Поступает краткое рассуждение...";
                     });
                 },
                 _currentRequest.Token);
@@ -282,13 +284,20 @@ public partial class MainWindow : Window
 
             assistantMessage.Content = string.IsNullOrWhiteSpace(reasoningBuffer)
                 ? answerBuffer
-                : $"Reasoning summary:\n{reasoningBuffer.Trim()}\n\nAnswer:\n{answerBuffer.Trim()}";
+                : $"Краткое рассуждение:\n{reasoningBuffer.Trim()}\n\nОтвет:\n{answerBuffer.Trim()}";
 
             chat.LastResponseId = result.ResponseId;
             chat.PromptTokens += result.Usage.PromptTokens;
             chat.CompletionTokens += result.Usage.CompletionTokens;
             chat.ReasoningTokens += result.Usage.ReasoningTokens;
+            chat.CachedTokens += result.Usage.CachedTokens;
             chat.TotalCostUsd += result.Usage.CostUsd;
+            assistantMessage.PromptTokens = result.Usage.PromptTokens;
+            assistantMessage.CompletionTokens = result.Usage.CompletionTokens;
+            assistantMessage.ReasoningTokens = result.Usage.ReasoningTokens;
+            assistantMessage.CachedTokens = result.Usage.CachedTokens;
+            assistantMessage.TotalTokens = result.Usage.TotalTokens;
+            assistantMessage.CostUsd = result.Usage.CostUsd;
             chat.UpdatedAtUtc = DateTime.UtcNow;
 
             RenderMessages();
@@ -324,7 +333,7 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "Images (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|All files (*.*)|*.*",
+            Filter = "Изображения (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg|Все файлы (*.*)|*.*",
             Multiselect = true
         };
 
@@ -454,7 +463,7 @@ public partial class MainWindow : Window
 
         var dialog = new SaveFileDialog
         {
-            Filter = "JPEG image (*.jpg)|*.jpg|PNG image (*.png)|*.png|All files (*.*)|*.*",
+            Filter = "JPEG-изображение (*.jpg)|*.jpg|PNG-изображение (*.png)|*.png|Все файлы (*.*)|*.*",
             FileName = "grok-image.jpg"
         };
 
@@ -543,7 +552,7 @@ public partial class MainWindow : Window
         {
             var request = await _xaiClient.StartVideoAsync(_state.Settings, prompt, VideoSourceBox.Text.Trim(), apiKey, _currentRequest.Token);
             item.RequestId = request.RequestId;
-            VideoStatusText.Text = "requestId: " + request.RequestId + " · pending";
+            VideoStatusText.Text = "requestId: " + request.RequestId + " · ожидает";
             PollVideoButton.IsEnabled = true;
             conversation.Title = prompt.Length <= 42 ? prompt : prompt[..42] + "...";
             conversation.UpdatedAtUtc = DateTime.UtcNow;
@@ -554,7 +563,7 @@ public partial class MainWindow : Window
         catch (OperationCanceledException)
         {
             item.Status = "pending";
-            VideoStatusText.Text = "Polling остановлен. Можно продолжить кнопкой Poll.";
+            VideoStatusText.Text = "Проверка остановлена. Можно продолжить кнопкой «Проверить».";
         }
         catch (Exception exception)
         {
@@ -589,11 +598,11 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            VideoStatusText.Text = "Polling остановлен.";
+            VideoStatusText.Text = "Проверка остановлена.";
         }
         catch (Exception exception)
         {
-            VideoStatusText.Text = "Ошибка polling: " + exception.Message;
+            VideoStatusText.Text = "Ошибка проверки: " + exception.Message;
         }
         finally
         {
@@ -618,7 +627,7 @@ public partial class MainWindow : Window
             item.Url = status.Url ?? item.Url;
             item.Model = status.Model ?? item.Model;
             item.Error = status.Error;
-            VideoStatusText.Text = $"requestId: {item.RequestId} · {item.Status}";
+            VideoStatusText.Text = $"requestId: {item.RequestId} · {item.DisplayStatus}";
             RefreshVideoHistory();
 
             if (status.Status is "done" or "failed" or "expired")
@@ -630,7 +639,7 @@ public partial class MainWindow : Window
             await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
         }
 
-        VideoStatusText.Text = "Polling timeout. Можно продолжить кнопкой Poll.";
+        VideoStatusText.Text = "Истекло время проверки. Можно продолжить кнопкой «Проверить».";
     }
 
     private async void SaveVideoButton_Click(object sender, RoutedEventArgs e)
@@ -643,7 +652,7 @@ public partial class MainWindow : Window
 
         var dialog = new SaveFileDialog
         {
-            Filter = "MP4 video (*.mp4)|*.mp4|All files (*.*)|*.*",
+            Filter = "MP4-видео (*.mp4)|*.mp4|Все файлы (*.*)|*.*",
             FileName = "grok-video.mp4"
         };
 
@@ -762,20 +771,21 @@ public partial class MainWindow : Window
     {
         try
         {
+            SyncApiKeyEditorBeforeRead();
             var key = ApiKeyBox.Password.Trim();
             if (string.IsNullOrWhiteSpace(key))
             {
-                MessageBox.Show(this, "Введите новый API key или используйте Delete key для удаления.", "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, "Введите новый API-ключ или используйте кнопку удаления ключа.", "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             _credentialVault.SaveApiKey(key);
-            ApiKeyBox.Clear();
+            SetApiKeyEditorValue(key);
             RefreshCredentialStatus();
             UpdateStarterApiKeyHint();
             RenderMessages();
             _storage.Save(_state);
-            MessageBox.Show(this, "API key сохранён: " + _credentialVault.StorageDescription, "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "API-ключ сохранён: " + _credentialVault.StorageDescription, "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception exception)
         {
@@ -788,7 +798,7 @@ public partial class MainWindow : Window
         try
         {
             _credentialVault.DeleteApiKey();
-            ApiKeyBox.Clear();
+            SetApiKeyEditorValue(string.Empty);
             RefreshCredentialStatus();
             UpdateStarterApiKeyHint();
             RenderMessages();
@@ -800,19 +810,67 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ToggleApiKeyVisibilityButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_apiKeyVisible)
+        {
+            ApiKeyBox.Password = ApiKeyRevealBox.Text;
+            ApiKeyRevealBox.Visibility = Visibility.Collapsed;
+            ApiKeyBox.Visibility = Visibility.Visible;
+            ToggleApiKeyVisibilityButton.Content = "👁";
+            ToggleApiKeyVisibilityButton.ToolTip = "Показать API-ключ";
+            _apiKeyVisible = false;
+            ApiKeyBox.Focus();
+        }
+        else
+        {
+            ApiKeyRevealBox.Text = ApiKeyBox.Password;
+            ApiKeyBox.Visibility = Visibility.Collapsed;
+            ApiKeyRevealBox.Visibility = Visibility.Visible;
+            ToggleApiKeyVisibilityButton.Content = "👁";
+            ToggleApiKeyVisibilityButton.ToolTip = "Скрыть API-ключ";
+            _apiKeyVisible = true;
+            ApiKeyRevealBox.Focus();
+            ApiKeyRevealBox.SelectAll();
+        }
+    }
+
+    private void LoadSavedApiKeyIntoEditor()
+    {
+        SetApiKeyEditorValue(_credentialVault.ReadApiKey() ?? string.Empty);
+    }
+
+    private void SetApiKeyEditorValue(string value)
+    {
+        ApiKeyBox.Password = value;
+        ApiKeyRevealBox.Text = value;
+    }
+
+    private void SyncApiKeyEditorBeforeRead()
+    {
+        if (_apiKeyVisible)
+        {
+            ApiKeyBox.Password = ApiKeyRevealBox.Text;
+        }
+        else
+        {
+            ApiKeyRevealBox.Text = ApiKeyBox.Password;
+        }
+    }
+
     private void ExportBackupButton_Click(object sender, RoutedEventArgs e)
     {
         SyncSettingsFromControls();
         var dialog = new SaveFileDialog
         {
-            Filter = "JSON backup (*.json)|*.json|All files (*.*)|*.*",
+            Filter = "Резервная копия JSON (*.json)|*.json|Все файлы (*.*)|*.*",
             FileName = "xai-grok-chat-backup.json"
         };
 
         if (dialog.ShowDialog(this) == true)
         {
             _storage.ExportBackup(_state, dialog.FileName);
-            MessageBox.Show(this, "Backup экспортирован без API key.", "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "Резервная копия экспортирована без API-ключа.", "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 
@@ -820,7 +878,7 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "JSON backup (*.json)|*.json|All files (*.*)|*.*"
+            Filter = "Резервная копия JSON (*.json)|*.json|Все файлы (*.*)|*.*"
         };
 
         if (dialog.ShowDialog(this) == true)
@@ -880,14 +938,14 @@ public partial class MainWindow : Window
         ModelsView.Visibility = section == "Models" ? Visibility.Visible : Visibility.Collapsed;
         SettingsView.Visibility = section == "Settings" ? Visibility.Visible : Visibility.Collapsed;
 
-        SectionTitle.Text = section;
+        SectionTitle.Text = GetSectionDisplayName(section);
         SectionSubtitle.Text = section switch
         {
             "Text" => "Диалог через Responses API",
             "Images" => "Генерация и редактирование через Images API",
-            "Videos" => "Асинхронная генерация и polling через Videos API",
-            "Models" => "Language / image / video endpoints и fallback /models",
-            "Settings" => "Ключ, base URL, backup и системная роль",
+            "Videos" => "Асинхронная генерация и проверка статуса через Videos API",
+            "Models" => "Endpoint'ы language / image / video и резервный /models",
+            "Settings" => "API-ключ, базовый URL, резервная копия и системная роль",
             _ => string.Empty
         };
 
@@ -956,6 +1014,19 @@ public partial class MainWindow : Window
                || (!string.IsNullOrWhiteSpace(value) && value.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static string GetSectionDisplayName(string section)
+    {
+        return section switch
+        {
+            "Text" => "Текст",
+            "Images" => "Изображения",
+            "Videos" => "Видео",
+            "Models" => "Модели",
+            "Settings" => "Настройки",
+            _ => section
+        };
+    }
+
     private void RenderMessages()
     {
         MessagePanel.Children.Clear();
@@ -992,7 +1063,7 @@ public partial class MainWindow : Window
         var stack = new StackPanel();
         stack.Children.Add(new TextBlock
         {
-            Text = $"{(isUser ? "You" : "Grok")} · {message.CreatedAtUtc.ToLocalTime():HH:mm}",
+            Text = $"{(isUser ? "Вы" : "Grok")} · {message.CreatedAtUtc.ToLocalTime():HH:mm}",
             FontWeight = FontWeights.SemiBold,
             Foreground = message.IsError ? (Brush)FindResource("DangerBrush") : (Brush)FindResource("MutedTextBrush")
         });
@@ -1015,14 +1086,43 @@ public partial class MainWindow : Window
         {
             stack.Children.Add(new TextBlock
             {
-                Text = "Attachments:\n" + string.Join("\n", message.Attachments),
+                Text = "Вложения:\n" + string.Join("\n", message.Attachments),
                 Foreground = (Brush)FindResource("MutedTextBrush"),
                 Margin = new Thickness(0, 8, 0, 0)
             });
         }
 
+        if (!isUser && HasMessageUsage(message))
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = FormatMessageUsage(message),
+                Foreground = (Brush)FindResource("MutedTextBrush"),
+                FontSize = 12,
+                Margin = new Thickness(0, 10, 0, 0)
+            });
+        }
+
         border.Child = stack;
         return border;
+    }
+
+    private static bool HasMessageUsage(ChatMessage message)
+    {
+        return message.PromptTokens > 0
+               || message.CompletionTokens > 0
+               || message.ReasoningTokens > 0
+               || message.CachedTokens > 0
+               || message.TotalTokens > 0
+               || message.CostUsd > 0;
+    }
+
+    private static string FormatMessageUsage(ChatMessage message)
+    {
+        var total = message.TotalTokens > 0
+            ? message.TotalTokens
+            : message.PromptTokens + message.CompletionTokens;
+        return $"Ответ: {message.CompletionTokens:N0} ток. · вход: {message.PromptTokens:N0} · кэш: {message.CachedTokens:N0} · рассуждение: {message.ReasoningTokens:N0} · всего: {total:N0} · ${message.CostUsd:0.####}";
     }
 
     private TextBox? FindMessageEditor(ChatMessage message)
@@ -1080,7 +1180,7 @@ public partial class MainWindow : Window
 
         ImageResultText.Text = item.Status == "failed"
             ? "Ошибка: " + item.Error
-            : $"{item.Status} · {item.Url ?? item.LocalPath ?? "нет URL"}";
+            : $"{item.DisplayStatus} · {item.Url ?? item.LocalPath ?? "нет URL"}";
 
         var source = item.LocalPath ?? item.Url;
         if (string.IsNullOrWhiteSpace(source))
@@ -1121,8 +1221,8 @@ public partial class MainWindow : Window
         }
 
         VideoStatusText.Text = string.IsNullOrWhiteSpace(item.RequestId)
-            ? item.Status
-            : $"requestId: {item.RequestId} · {item.Status}";
+            ? item.DisplayStatus
+            : $"requestId: {item.RequestId} · {item.DisplayStatus}";
 
         var source = item.LocalPath ?? item.Url;
         if (string.IsNullOrWhiteSpace(source))
@@ -1306,7 +1406,8 @@ public partial class MainWindow : Window
     {
         if (CurrentTextChat() is { } chat)
         {
-            UsageText.Text = $"Prompt: {chat.PromptTokens:N0}, completion: {chat.CompletionTokens:N0}, reasoning: {chat.ReasoningTokens:N0}, cost: ${chat.TotalCostUsd:0.####}";
+            var nonCachedPromptTokens = Math.Max(0, chat.PromptTokens - chat.CachedTokens);
+            UsageText.Text = $"Вход: {chat.PromptTokens:N0} ток. · кэшировано: {chat.CachedTokens:N0} · без кэша: {nonCachedPromptTokens:N0} · ответ: {chat.CompletionTokens:N0} · рассуждение: {chat.ReasoningTokens:N0} · стоимость: ${chat.TotalCostUsd:0.####}";
             LastResponseIdText.Text = string.IsNullOrWhiteSpace(chat.LastResponseId)
                 ? "previousResponseId: нет"
                 : "previousResponseId: " + chat.LastResponseId;
@@ -1317,8 +1418,8 @@ public partial class MainWindow : Window
     {
         var hasKey = _credentialVault.HasApiKey();
         CredentialStatusText.Text = hasKey
-            ? "API key сохранён: " + _credentialVault.StorageDescription
-            : "API key не сохранён";
+            ? "API-ключ сохранён: " + _credentialVault.StorageDescription
+            : "API-ключ не сохранён";
         CredentialStatusText.Foreground = hasKey
             ? (Brush)FindResource("SuccessBrush")
             : (Brush)FindResource("WarningBrush");
@@ -1335,14 +1436,16 @@ public partial class MainWindow : Window
             }
 
             var message = chat.Messages[0];
-            if (message.Role != "assistant" || !message.Content.Contains("API key", StringComparison.OrdinalIgnoreCase))
+            if (message.Role != "assistant"
+                || (!message.Content.Contains("API key", StringComparison.OrdinalIgnoreCase)
+                    && !message.Content.Contains("API-ключ", StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
 
             message.Content = hasKey
-                ? "API key сохранён. Выберите модель, настройте параметры справа и отправьте сообщение."
-                : "Готов к работе. Вставьте xAI API key в Settings, выберите модель и отправьте сообщение.";
+                ? "API-ключ сохранён. Выберите модель, настройте параметры справа и отправьте сообщение."
+                : "Готов к работе. Вставьте xAI API-ключ в настройках, выберите модель и отправьте сообщение.";
         }
     }
 
@@ -1361,7 +1464,7 @@ public partial class MainWindow : Window
 
         if (showSettingsOnMissing)
         {
-            MessageBox.Show(this, "Сначала сохраните xAI API key в Settings.", "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "Сначала сохраните xAI API-ключ в настройках.", "xAI Grok Chat PC", MessageBoxButton.OK, MessageBoxImage.Information);
             SelectSection("Settings");
         }
 
@@ -1394,7 +1497,7 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "Images (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp|All files (*.*)|*.*"
+            Filter = "Изображения (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp|Все файлы (*.*)|*.*"
         };
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }

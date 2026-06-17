@@ -52,6 +52,7 @@ public sealed class ChatSession
     public long PromptTokens { get; set; }
     public long CompletionTokens { get; set; }
     public long ReasoningTokens { get; set; }
+    public long CachedTokens { get; set; }
     public decimal TotalCostUsd { get; set; }
     public List<ChatMessage> Messages { get; set; } = [];
 
@@ -67,6 +68,7 @@ public sealed class ChatSession
             PromptTokens = PromptTokens,
             CompletionTokens = CompletionTokens,
             ReasoningTokens = ReasoningTokens,
+            CachedTokens = CachedTokens,
             TotalCostUsd = TotalCostUsd,
             Messages = Messages.Select(message => message.Duplicate()).ToList()
         };
@@ -82,6 +84,12 @@ public sealed class ChatMessage
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public List<string> Attachments { get; set; } = [];
     public bool IsError { get; set; }
+    public long PromptTokens { get; set; }
+    public long CompletionTokens { get; set; }
+    public long ReasoningTokens { get; set; }
+    public long CachedTokens { get; set; }
+    public long TotalTokens { get; set; }
+    public decimal CostUsd { get; set; }
 
     public ChatMessage Duplicate()
     {
@@ -91,7 +99,13 @@ public sealed class ChatMessage
             Content = Content,
             CreatedAtUtc = CreatedAtUtc,
             Attachments = [.. Attachments],
-            IsError = IsError
+            IsError = IsError,
+            PromptTokens = PromptTokens,
+            CompletionTokens = CompletionTokens,
+            ReasoningTokens = ReasoningTokens,
+            CachedTokens = CachedTokens,
+            TotalTokens = TotalTokens,
+            CostUsd = CostUsd
         };
     }
 }
@@ -134,6 +148,17 @@ public sealed class MediaItem
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public decimal CostUsd { get; set; }
 
+    public string DisplayStatus => Status switch
+    {
+        "pending" => "ожидает",
+        "progress" => "в работе",
+        "processing" => "в работе",
+        "done" => "готово",
+        "failed" => "ошибка",
+        "expired" => "истекло",
+        _ => Status
+    };
+
     public MediaItem Duplicate()
     {
         return new MediaItem
@@ -154,8 +179,8 @@ public sealed class MediaItem
 
     public override string ToString()
     {
-        var label = string.IsNullOrWhiteSpace(Prompt) ? "(без prompt)" : Prompt;
-        return $"{CreatedAtUtc.ToLocalTime():HH:mm} · {Status} · {label}";
+        var label = string.IsNullOrWhiteSpace(Prompt) ? "(без промпта)" : Prompt;
+        return $"{CreatedAtUtc.ToLocalTime():HH:mm} · {DisplayStatus} · {label}";
     }
 }
 
@@ -214,6 +239,7 @@ public sealed class XaiUsage
     public long PromptTokens { get; set; }
     public long CompletionTokens { get; set; }
     public long ReasoningTokens { get; set; }
+    public long CachedTokens { get; set; }
     public long TotalTokens { get; set; }
     public decimal CostUsd { get; set; }
 }

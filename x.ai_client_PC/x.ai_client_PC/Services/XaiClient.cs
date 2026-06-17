@@ -111,7 +111,7 @@ public sealed class XaiClient : IDisposable
                 SupportsMaxOutputTokens = false,
                 SupportsPenalties = false,
                 ReasoningEfforts = ["low", "medium", "high", "xhigh"],
-                Summary = "Multi-Agent: reasoning.effort управляет числом агентов; sampling, max tokens и penalties не отправляются."
+                Summary = "Multi-Agent: reasoning.effort управляет числом агентов; sampling, макс. токены и штрафы не отправляются."
             };
         }
 
@@ -126,7 +126,7 @@ public sealed class XaiClient : IDisposable
                 SupportsMaxOutputTokens = true,
                 SupportsPenalties = false,
                 ReasoningEfforts = ["none", "low", "medium", "high"],
-                Summary = "Reasoning: отправляется reasoning.effort; presence/frequency penalties не отправляются."
+                Summary = "Модель с рассуждением: отправляется reasoning.effort; штрафы за присутствие и частоту не отправляются."
             };
         }
 
@@ -140,8 +140,8 @@ public sealed class XaiClient : IDisposable
             SupportsPenalties = true,
             ReasoningEfforts = [],
             Summary = isNonReasoning
-                ? "Non-reasoning: reasoning.effort полностью убран из запроса; sampling и penalties доступны."
-                : "Обычная текстовая модель: reasoning.effort не отправляется; sampling и penalties доступны."
+                ? "Модель без рассуждения: reasoning.effort полностью убран из запроса; sampling и штрафы доступны."
+                : "Обычная текстовая модель: reasoning.effort не отправляется; sampling и штрафы доступны."
         };
     }
 
@@ -150,7 +150,7 @@ public sealed class XaiClient : IDisposable
         var catalog = CreateDefaultCatalog();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            catalog.Status = "Введите и сохраните API key, чтобы загрузить доступные модели.";
+            catalog.Status = "Введите и сохраните API-ключ, чтобы загрузить доступные модели.";
             return catalog;
         }
 
@@ -232,6 +232,7 @@ public sealed class XaiClient : IDisposable
     {
         var payload = BuildResponsesPayload(settings, chat, userMessage);
         using var request = CreateJsonRequest(HttpMethod.Post, settings.BaseUrl, "responses", apiKey, payload);
+        request.Headers.TryAddWithoutValidation("x-grok-conv-id", chat.Id);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
 
@@ -646,6 +647,7 @@ public sealed class XaiClient : IDisposable
                     PromptTokens = usage.PromptTokens,
                     CompletionTokens = usage.CompletionTokens,
                     ReasoningTokens = usage.ReasoningTokens,
+                    CachedTokens = usage.CachedTokens,
                     TotalTokens = usage.TotalTokens
                 }
             });
@@ -908,6 +910,26 @@ public sealed class XaiClient : IDisposable
         if (usage.TryGetProperty("output_tokens_details", out var outputDetails))
         {
             result.ReasoningTokens = GetLong(outputDetails, "reasoning_tokens");
+        }
+
+        if (usage.TryGetProperty("completion_tokens_details", out var completionDetails) && result.ReasoningTokens == 0)
+        {
+            result.ReasoningTokens = GetLong(completionDetails, "reasoning_tokens");
+        }
+
+        if (usage.TryGetProperty("input_tokens_details", out var inputDetails))
+        {
+            result.CachedTokens = GetLong(inputDetails, "cached_tokens");
+        }
+
+        if (usage.TryGetProperty("prompt_tokens_details", out var promptDetails) && result.CachedTokens == 0)
+        {
+            result.CachedTokens = GetLong(promptDetails, "cached_tokens");
+        }
+
+        if (result.CachedTokens == 0)
+        {
+            result.CachedTokens = GetLong(usage, "cached_tokens");
         }
 
         if (result.ReasoningTokens == 0)
